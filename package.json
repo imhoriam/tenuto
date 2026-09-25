@@ -14,7 +14,8 @@
     "db:reset": "prisma migrate reset --force",
     "typecheck": "tsc --noEmit",
     "db:seed": "tsx prisma/seed.ts",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "test:integration": "tsx scripts/integration.mts"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
