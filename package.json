@@ -6,21 +6,43 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "tsx --test \"src/**/*.test.ts\"",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset --force",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@prisma/adapter-better-sqlite3": "^7.10.0",
+    "@prisma/client": "7.10.0",
+    "date-fns": "^4.4.0",
+    "dotenv": "^18.0.4",
+    "nanoid": "^6.0.1",
     "next": "16.3.6",
+    "prisma": "7.10.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^20.19.43",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.10.0": true,
+    "better-sqlite3@12.11.1": true,
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true,
+    "prisma@7.10.0": true,
+    "unrs-resolver@1.12.2": true
   }
 }
