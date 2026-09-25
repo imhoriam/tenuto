@@ -12,9 +12,12 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:seed": "tsx prisma/seed.ts",
+    "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {
+    "@date-fns/tz": "^1.5.0",
     "@prisma/adapter-better-sqlite3": "^7.10.0",
     "@prisma/client": "7.10.0",
     "date-fns": "^4.4.0",
