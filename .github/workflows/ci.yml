@@ -44,6 +44,9 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      # `typecheck` runs `next typegen` first: Next generates LayoutProps and
+      # PageProps into .next/types, and without them tsc fails on a clean
+      # checkout while passing locally for anyone who has already built.
       - name: Typecheck
         run: npm run typecheck
 
