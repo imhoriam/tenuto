@@ -31,6 +31,8 @@ const {
 } = await import("../src/lib/constants");
 const { createBooking, markNoShow, checkIn, collectDueCharges, BookingError } =
   await import("../src/lib/booking/service");
+const { venueKey } = await import("../src/lib/checkin");
+const { checkInAtVenue } = await import("../src/app/checkin/[locationId]/actions");
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -347,6 +349,106 @@ async function main() {
     assert.equal(card, null);
     assert.equal(booking.feeCents, 0);
     assert.equal(await db.mandate.count({ where: { bookingId: booking.id } }), 0);
+  });
+
+
+  // --- venue QR check-in ----------------------------------------------------
+
+  await step("a wrong venue key cannot check anyone in", async () => {
+    const { booking } = await book(ctx, {
+      phone: "+40700000010",
+      name: "Guarded",
+      startAt: new Date(Date.now() + 130 * HOUR),
+    });
+    await backdate(booking.id, new Date(Date.now() - 5 * MIN));
+
+    const res = await checkInAtVenue({
+      locationId: ctx.business.locations[0].id,
+      key: "00000000000000ff",
+      lookup: "+40700000010",
+    });
+
+    assert.equal(res.ok, false);
+    const after = await db.booking.findUniqueOrThrow({ where: { id: booking.id } });
+    assert.equal(after.status, BOOKING_STATUS.CONFIRMED, "must not be checked in");
+    assert.equal(after.checkedInAt, null);
+  });
+
+  await step("the printed venue key checks a customer in", async () => {
+    const location = ctx.business.locations[0];
+    const { booking } = await book(ctx, {
+      phone: "+40700000011",
+      name: "Arrived",
+      startAt: new Date(Date.now() + 150 * HOUR),
+    });
+    await backdate(booking.id, new Date(Date.now() - 5 * MIN));
+
+    const res = await checkInAtVenue({
+      locationId: location.id,
+      key: venueKey(location.id, location.checkInSecret),
+      lookup: "0700 000 011", // typed with spaces, no country code
+    });
+
+    assert.equal(res.ok, true);
+    const after = await db.booking.findUniqueOrThrow({ where: { id: booking.id } });
+    assert.equal(after.status, BOOKING_STATUS.CHECKED_IN);
+    assert.ok(after.checkedInAt);
+  });
+
+  await step("scanning rescues someone already marked absent", async () => {
+    const location = ctx.business.locations[0];
+    const { booking } = await book(ctx, {
+      phone: "+40700000012",
+      name: "Late But Scanning",
+      startAt: new Date(Date.now() + 170 * HOUR),
+    });
+    // 25 minutes late: past the 15 minute grace, inside the check-in window.
+    await backdate(booking.id, new Date(Date.now() - 25 * MIN));
+    await markNoShow({ bookingId: booking.id, actorLabel: "staff" });
+
+    const res = await checkInAtVenue({
+      locationId: location.id,
+      key: venueKey(location.id, location.checkInSecret),
+      lookup: "+40700000012",
+    });
+
+    assert.equal(res.ok, true);
+    const after = await db.booking.findUniqueOrThrow({ where: { id: booking.id } });
+    assert.equal(after.status, BOOKING_STATUS.CHECKED_IN);
+    assert.equal(after.chargeableAt, null, "the pending charge must be cleared");
+
+    await collectDueCharges();
+    assert.equal(
+      await db.charge.count({ where: { bookingId: booking.id } }),
+      0,
+      "a customer who scanned must never be charged",
+    );
+  });
+
+  await step("check-in far outside the window is refused", async () => {
+    const location = ctx.business.locations[0];
+    await book(ctx, {
+      phone: "+40700000013",
+      name: "Way Too Early",
+      startAt: new Date(Date.now() + 190 * HOUR), // days away
+    });
+
+    const res = await checkInAtVenue({
+      locationId: location.id,
+      key: venueKey(location.id, location.checkInSecret),
+      lookup: "+40700000013",
+    });
+    assert.equal(res.ok, false);
+  });
+
+  await step("an unknown phone number finds nothing", async () => {
+    const location = ctx.business.locations[0];
+    const res = await checkInAtVenue({
+      locationId: location.id,
+      key: venueKey(location.id, location.checkInSecret),
+      lookup: "+40799999999",
+    });
+    assert.equal(res.ok, false);
   });
 
   await step("every transition left an audit trail", async () => {
