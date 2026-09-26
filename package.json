@@ -12,10 +12,11 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "db:seed": "tsx prisma/seed.ts",
     "smoke": "tsx scripts/smoke.ts",
-    "test:integration": "tsx scripts/integration.mts"
+    "test:integration": "tsx scripts/integration.mts",
+    "typegen": "next typegen"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
