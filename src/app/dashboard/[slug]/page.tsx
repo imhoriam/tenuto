@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { db } from "@/lib/db";
@@ -106,6 +107,12 @@ export default async function DashboardPage({
               {business.name}
             </h1>
             <p className="mt-1 text-sm capitalize text-stone-500">{todayLabel}</p>
+            <Link
+              href={`/dashboard/${business.slug}/qr`}
+              className="mt-2 inline-block text-sm text-stone-500 underline underline-offset-4 transition hover:text-stone-900"
+            >
+              Cod QR pentru intrare →
+            </Link>
           </div>
 
           <div className="flex gap-3">
