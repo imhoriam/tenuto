@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same PR cancels the previous run — no point burning
+# minutes on a commit nobody is waiting for any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # The integration test creates its own throwaway database; this is only
+      # so nothing complains about an unset variable during generate/build.
+      DATABASE_URL: "file:./prisma/ci.db"
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # npm ci honours the allowScripts map in package.json, which is what
+      # lets better-sqlite3 compile. Without those approvals it installs
+      # without building and fails only at runtime.
+      - name: Install
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      # Drives the real money path against a real (temporary) database:
+      # grace enforcement, charge scheduling, idempotent collection, the late
+      # arrival rescue, and card declines.
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: Build
+        run: npm run build
