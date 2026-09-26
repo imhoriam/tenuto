@@ -2,6 +2,8 @@ import type {
   ChargeParams,
   ChargeResult,
   PaymentProvider,
+  RefundParams,
+  RefundResult,
   SaveCardParams,
   SavedCard,
 } from "./provider";
@@ -101,6 +103,13 @@ export class MockPaymentProvider implements PaymentProvider {
     }
 
     return { ok: true, providerRef: ref("pi") };
+  }
+
+  async refund(params: RefundParams): Promise<RefundResult> {
+    if (!params.chargeRef) {
+      return { ok: false, code: "missing_charge", message: "No charge to refund." };
+    }
+    return { ok: true, refundRef: ref("re") };
   }
 }
 

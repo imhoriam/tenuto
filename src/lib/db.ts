@@ -29,7 +29,12 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: ReturnType<typeof createClient>;
 };
 
-export const db = globalForPrisma.prisma ?? createClient();
+// After `prisma generate` the dev server hot-reloads a *new* PrismaClient class,
+// but the cached instance is still the old one — it lacks any model added since
+// (e.g. `db.account` is undefined). instanceof against the fresh class catches
+// that and rebuilds, at the cost of one leaked connection per regeneration.
+const cached = globalForPrisma.prisma;
+export const db = cached instanceof PrismaClient ? cached : createClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = db;

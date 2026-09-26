@@ -1,13 +1,14 @@
-import { customAlphabet } from "nanoid";
+import { customAlphabet, nanoid as secureId } from "nanoid";
 
 import { db } from "@/lib/db";
 import {
   ACTOR,
   BLOCKING_STATUSES,
   BOOKING_STATUS,
-  CHANNEL,
   CHARGE_STATUS,
-  CHECKIN_METHOD,
+  DISPUTE_STATUS,
+  DISPUTE_WINDOW_DAYS,
+  PAYOUT_STATUS,
   MANDATE_STATUS,
   REQUIREMENT,
   type Actor,
@@ -17,6 +18,7 @@ import {
 import { mockProvider } from "@/lib/payments/mock";
 import { nextRetryAt } from "@/lib/payments/provider";
 import {
+  assertActorMayResolveDispute,
   assertActorMayTransition,
   assertTransition,
   canMarkNoShow,
@@ -40,8 +42,8 @@ export class BookingError extends Error {
 
 /** How long a mandate has to be completed before the slot is released. */
 const SETUP_WINDOW_MS = 15 * 60 * 1000;
-/** Breathing room between marking someone absent and taking their money. */
-const CHARGE_GRACE_MS = 2 * 60 * 60 * 1000;
+/** How long collected money is held before it reaches the business. */
+const DISPUTE_WINDOW_MS = DISPUTE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
 async function record(
   tx: Pick<typeof db, "bookingEvent">,
@@ -98,6 +100,9 @@ export async function createBooking(input: CreateBookingInput) {
     include: { locations: { take: 1 } },
   });
   if (!business) throw new BookingError("Unknown business.", "no_business");
+  if (business.suspendedAt) {
+    throw new BookingError("This restaurant is not taking bookings right now.", "suspended");
+  }
 
   const service = await db.service.findUnique({
     where: { id: input.serviceId },
@@ -215,6 +220,7 @@ export async function createBooking(input: CreateBookingInput) {
     const booking = await tx.booking.create({
       data: {
         reference: `TNT-${nanoid()}`,
+        accessToken: secureId(24),
         businessId: business.id,
         serviceId: service.id,
         resourceId: resource.id,
@@ -269,30 +275,20 @@ export async function createBooking(input: CreateBookingInput) {
       reason: `policy: ${policy.matchedRuleName}`,
     });
 
-    await tx.notification.create({
-      data: {
-        bookingId: booking.id,
-        channel: CHANNEL.CONSOLE,
-        template: "confirmation",
-        body: `${booking.reference}: masă pentru ${input.partySize} la ${business.name}.`,
-        status: "sent",
-        sentAt: new Date(),
-      },
-    });
 
     return { booking, policy, card: saved };
   });
 }
 
 /**
- * Customer check-in. The only thing that can pull a booking out of the charge
- * path — see invariant 3 in CLAUDE.md.
+ * Record an arrival. The host confirms the customer by name; this is the only
+ * thing that can pull a booking out of the charge path, and it works right up
+ * until the charge fires (invariant 3). A staff override may only ever
+ * prevent a charge, never cause one (invariant 2).
  */
 export async function checkIn(params: {
   bookingId: string;
   method: CheckInMethod;
-  lat?: number;
-  lng?: number;
   actorLabel?: string;
 }) {
   return db.$transaction(async (tx) => {
@@ -305,9 +301,6 @@ export async function checkIn(params: {
     if (from === BOOKING_STATUS.CHECKED_IN) return booking; // idempotent
 
     assertTransition(from, BOOKING_STATUS.CHECKED_IN);
-
-    const actor =
-      params.method === CHECKIN_METHOD.MANUAL ? ACTOR.BUSINESS : ACTOR.CUSTOMER;
 
     const updated = await tx.booking.update({
       where: { id: booking.id },
@@ -324,8 +317,6 @@ export async function checkIn(params: {
       data: {
         bookingId: booking.id,
         method: params.method,
-        lat: params.lat,
-        lng: params.lng,
         actorLabel: params.actorLabel,
       },
     });
@@ -334,7 +325,7 @@ export async function checkIn(params: {
       bookingId: booking.id,
       from,
       to: BOOKING_STATUS.CHECKED_IN,
-      actorType: actor,
+      actorType: ACTOR.BUSINESS,
       actorLabel: params.actorLabel,
       reason: `check-in via ${params.method}`,
     });
@@ -377,7 +368,8 @@ export async function markNoShow(params: {
       data: {
         status: BOOKING_STATUS.NO_SHOW_PENDING,
         noShowMarkedAt: now,
-        chargeableAt: new Date(now.getTime() + CHARGE_GRACE_MS),
+        // Collectable at once: the grace period has already run out.
+        chargeableAt: now,
       },
     });
 
@@ -394,8 +386,24 @@ export async function markNoShow(params: {
   });
 }
 
-/** Forgive a charge. Always allowed, always logged. */
+/**
+ * Forgive a fee. Always allowed, always logged. If the money was already
+ * taken — collected or under dispute — it is refunded, not just relabelled.
+ */
 export async function waive(params: { bookingId: string; actorLabel: string; reason?: string }) {
+  const current = await db.booking.findUnique({ where: { id: params.bookingId } });
+  if (
+    current &&
+    (current.status === BOOKING_STATUS.CHARGE_SUCCEEDED || current.status === BOOKING_STATUS.DISPUTED)
+  ) {
+    return refundBooking({
+      bookingId: params.bookingId,
+      actor: ACTOR.BUSINESS,
+      actorLabel: params.actorLabel,
+      note: params.reason ?? "refunded by the restaurant",
+    });
+  }
+
   return db.$transaction(async (tx) => {
     const booking = await tx.booking.findUnique({ where: { id: params.bookingId } });
     if (!booking) throw new BookingError("Unknown booking.", "no_booking");
@@ -450,7 +458,7 @@ export async function cancelBooking(params: {
         cancelledAt: new Date(),
         chargeableAt:
           to === BOOKING_STATUS.CANCELLED_LATE
-            ? new Date(Date.now() + CHARGE_GRACE_MS)
+            ? new Date()
             : null,
       },
     });
@@ -468,14 +476,106 @@ export async function cancelBooking(params: {
 }
 
 /**
- * The scheduled job: collect everything whose grace window has expired.
- * Idempotent — the unique key on Charge is what makes a re-run safe.
+ * Record a no-show for every confirmed booking whose grace period has fully
+ * elapsed with no check-in. The *system* does this, not staff, so it sits on
+ * the right side of invariant 1: nobody asserted anything, a clock ran out.
+ *
+ * The grace period is the only hold the restaurant gives: once it ends the
+ * table is released for other guests, and the fee is collectable. Staff can
+ * still record a late arrival ("A venit totuși") or waive it until the charge
+ * actually runs, and a collected fee can be disputed (see openDispute).
+ *
+ * The grace period is read from the policy snapshot when there is one: the
+ * customer agreed to *that* number, and a restaurant shortening its grace
+ * period later must not shorten it for bookings already made.
+ *
+ * Runs lazily (dashboard load, charge button) until a scheduled worker exists.
  */
-export async function collectDueCharges(now: Date = new Date()) {
+export async function sweepNoShows(
+  params: { businessId?: string; now?: Date } = {},
+) {
+  const now = params.now ?? new Date();
+
+  const candidates = await db.booking.findMany({
+    where: {
+      ...(params.businessId ? { businessId: params.businessId } : {}),
+      status: BOOKING_STATUS.CONFIRMED,
+      checkedInAt: null,
+      startAt: { lte: now },
+    },
+    include: { business: true, policySnapshot: true },
+  });
+
+  const marked: string[] = [];
+
+  for (const booking of candidates) {
+    const grace =
+      booking.policySnapshot?.gracePeriodMin ?? booking.business.gracePeriodMin;
+    const graceEnd = new Date(booking.startAt.getTime() + grace * 60_000);
+    if (now < graceEnd) continue;
+
+    assertActorMayTransition(ACTOR.SYSTEM, BOOKING_STATUS.NO_SHOW_PENDING);
+    assertTransition(BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.NO_SHOW_PENDING);
+
+    const done = await db.$transaction(async (tx) => {
+      // Conditional on still being confirmed and not checked in: a check-in
+      // that landed since the read above wins.
+      const { count } = await tx.booking.updateMany({
+        where: {
+          id: booking.id,
+          status: BOOKING_STATUS.CONFIRMED,
+          checkedInAt: null,
+        },
+        data: {
+          status: BOOKING_STATUS.NO_SHOW_PENDING,
+          noShowMarkedAt: now,
+          chargeableAt: graceEnd,
+        },
+      });
+      if (count === 0) return false;
+
+      await record(tx, {
+        bookingId: booking.id,
+        from: BOOKING_STATUS.CONFIRMED,
+        to: BOOKING_STATUS.NO_SHOW_PENDING,
+        actorType: ACTOR.SYSTEM,
+        reason: `no check-in within ${grace} min grace period`,
+      });
+      return true;
+    });
+
+    if (done) marked.push(booking.reference);
+  }
+
+  return marked;
+}
+
+/**
+ * The scheduled job: collect every no-show and late cancellation that is due,
+ * plus soft declines whose retry is due. Idempotent — the unique key on Charge is
+ * what makes a re-run safe.
+ *
+ * `businessId` scopes a run to one restaurant, which is what the dashboard's
+ * button does; the future cron worker omits it.
+ */
+export async function collectDueCharges(
+  now: Date = new Date(),
+  scope: { businessId?: string } = {},
+) {
   const due = await db.booking.findMany({
     where: {
+      ...(scope.businessId ? { businessId: scope.businessId } : {}),
+      // A suspended business collects nothing until the platform reinstates it.
+      business: { suspendedAt: null },
       status: {
-        in: [BOOKING_STATUS.NO_SHOW_PENDING, BOOKING_STATUS.CANCELLED_LATE],
+        in: [
+          BOOKING_STATUS.NO_SHOW_PENDING,
+          BOOKING_STATUS.CANCELLED_LATE,
+          // A soft decline leaves chargeableAt at the next retry; a hard
+          // decline or an exhausted ladder leaves it null, so neither is
+          // picked up again.
+          BOOKING_STATUS.CHARGE_FAILED,
+        ],
       },
       chargeableAt: { lte: now },
       feeCents: { gt: 0 },
@@ -519,6 +619,10 @@ export async function collectDueCharges(now: Date = new Date()) {
             providerRef: result.providerRef,
             attempt,
             succeededAt: new Date(),
+            // Held, not paid out: the customer has DISPUTE_WINDOW_DAYS to
+            // contest it before it reaches the business.
+            payoutStatus: PAYOUT_STATUS.HELD,
+            payoutReleaseAt: new Date(now.getTime() + DISPUTE_WINDOW_MS),
           },
         });
         await tx.booking.update({
@@ -578,4 +682,216 @@ export async function collectDueCharges(now: Date = new Date()) {
   return results;
 }
 
-export { SETUP_WINDOW_MS, CHARGE_GRACE_MS };
+// ---------------------------------------------------------------------------
+// Refunds, disputes, payouts
+// ---------------------------------------------------------------------------
+
+/**
+ * Give a collected fee back in full. The provider refund runs first, with an
+ * idempotency key per charge, so a retry after a crash cannot pay out twice;
+ * the database then records the booking as waived.
+ */
+export async function refundBooking(params: {
+  bookingId: string;
+  actor: Actor;
+  actorLabel?: string;
+  note?: string;
+}) {
+  const booking = await db.booking.findUnique({
+    where: { id: params.bookingId },
+    include: { charges: true, dispute: true },
+  });
+  if (!booking) throw new BookingError("Unknown booking.", "no_booking");
+
+  const from = booking.status as BookingStatus;
+  assertTransition(from, BOOKING_STATUS.WAIVED);
+  if (from === BOOKING_STATUS.DISPUTED) assertActorMayResolveDispute(params.actor, "refund");
+
+  const charge = booking.charges.find((c) => c.status === CHARGE_STATUS.SUCCEEDED);
+  if (!charge?.providerRef) throw new BookingError("There is no collected fee to refund.", "no_charge");
+
+  const result = await mockProvider.refund({
+    chargeRef: charge.providerRef,
+    amountCents: charge.amountCents,
+    idempotencyKey: `refund_${charge.id}`,
+  });
+  if (!result.ok) throw new BookingError(`Refund failed: ${result.message}`, "refund_failed");
+
+  return db.$transaction(async (tx) => {
+    const now = new Date();
+    await tx.charge.update({
+      where: { id: charge.id },
+      data: {
+        status: CHARGE_STATUS.REFUNDED,
+        payoutStatus: PAYOUT_STATUS.REFUNDED,
+        refundedAt: now,
+        refundRef: result.refundRef,
+      },
+    });
+    if (booking.dispute && booking.dispute.status === DISPUTE_STATUS.OPEN) {
+      await tx.dispute.update({
+        where: { id: booking.dispute.id },
+        data: {
+          status: DISPUTE_STATUS.REFUNDED,
+          resolvedAt: now,
+          resolvedBy: params.actor,
+          resolution: params.note,
+        },
+      });
+    }
+    const updated = await tx.booking.update({
+      where: { id: booking.id },
+      data: { status: BOOKING_STATUS.WAIVED, chargeableAt: null },
+    });
+    await record(tx, {
+      bookingId: booking.id,
+      from,
+      to: BOOKING_STATUS.WAIVED,
+      actorType: params.actor,
+      actorLabel: params.actorLabel,
+      reason: `refunded ${charge.amountCents}${params.note ? ` — ${params.note}` : ""}`,
+    });
+    return updated;
+  });
+}
+
+/**
+ * The customer contests a collected fee, from their own booking page. Allowed
+ * while the money is still held; it freezes the payout until the dispute is
+ * resolved. Only the customer can open one (see assertActorMayTransition).
+ */
+export async function openDispute(params: { accessToken: string; reason?: string; now?: Date }) {
+  const now = params.now ?? new Date();
+  const booking = await db.booking.findUnique({
+    where: { accessToken: params.accessToken },
+    include: { charges: true, dispute: true },
+  });
+  if (!booking) throw new BookingError("Unknown booking.", "no_booking");
+  if (booking.dispute) return booking.dispute; // already open or settled — idempotent
+
+  const from = booking.status as BookingStatus;
+  if (from !== BOOKING_STATUS.CHARGE_SUCCEEDED) {
+    throw new BookingError("There is no collected fee to dispute.", "not_charged");
+  }
+  const charge = booking.charges.find((c) => c.status === CHARGE_STATUS.SUCCEEDED);
+  if (!charge || charge.payoutStatus !== PAYOUT_STATUS.HELD || !charge.payoutReleaseAt || now > charge.payoutReleaseAt) {
+    throw new BookingError(
+      `Disputes can be opened within ${DISPUTE_WINDOW_DAYS} days of the charge.`,
+      "dispute_window_closed",
+    );
+  }
+
+  assertActorMayTransition(ACTOR.CUSTOMER, BOOKING_STATUS.DISPUTED);
+  assertTransition(from, BOOKING_STATUS.DISPUTED);
+
+  const reason = params.reason?.trim().slice(0, 1000) || null;
+
+  return db.$transaction(async (tx) => {
+    const dispute = await tx.dispute.create({ data: { bookingId: booking.id, reason } });
+    await tx.charge.update({ where: { id: charge.id }, data: { payoutStatus: PAYOUT_STATUS.FROZEN } });
+    await tx.booking.update({ where: { id: booking.id }, data: { status: BOOKING_STATUS.DISPUTED } });
+    await record(tx, {
+      bookingId: booking.id,
+      from,
+      to: BOOKING_STATUS.DISPUTED,
+      actorType: ACTOR.CUSTOMER,
+      reason: reason ? `disputed: ${reason}` : "disputed",
+    });
+    return dispute;
+  });
+}
+
+/**
+ * Settle an open dispute. Refund is open to the business and the platform;
+ * upholding is the platform's alone, and releases the money at once.
+ */
+export async function resolveDispute(params: {
+  bookingId: string;
+  outcome: "refund" | "uphold";
+  actor: Actor;
+  actorLabel?: string;
+  note?: string;
+}) {
+  assertActorMayResolveDispute(params.actor, params.outcome);
+
+  if (params.outcome === "refund") {
+    return refundBooking({
+      bookingId: params.bookingId,
+      actor: params.actor,
+      actorLabel: params.actorLabel,
+      note: params.note,
+    });
+  }
+
+  return db.$transaction(async (tx) => {
+    const booking = await tx.booking.findUnique({
+      where: { id: params.bookingId },
+      include: { charges: true, dispute: true },
+    });
+    if (!booking?.dispute) throw new BookingError("No dispute on this booking.", "no_dispute");
+    if (booking.dispute.status !== DISPUTE_STATUS.OPEN) {
+      throw new BookingError("This dispute is already resolved.", "dispute_resolved");
+    }
+
+    const from = booking.status as BookingStatus;
+    assertTransition(from, BOOKING_STATUS.CHARGE_SUCCEEDED);
+
+    const now = new Date();
+    const charge = booking.charges.find((c) => c.status === CHARGE_STATUS.SUCCEEDED);
+    if (charge) {
+      await tx.charge.update({
+        where: { id: charge.id },
+        data: { payoutStatus: PAYOUT_STATUS.RELEASED, payoutReleaseAt: now },
+      });
+    }
+    await tx.dispute.update({
+      where: { id: booking.dispute.id },
+      data: { status: DISPUTE_STATUS.UPHELD, resolvedAt: now, resolvedBy: params.actor, resolution: params.note },
+    });
+    const updated = await tx.booking.update({
+      where: { id: booking.id },
+      data: { status: BOOKING_STATUS.CHARGE_SUCCEEDED },
+    });
+    await record(tx, {
+      bookingId: booking.id,
+      from,
+      to: BOOKING_STATUS.CHARGE_SUCCEEDED,
+      actorType: params.actor,
+      actorLabel: params.actorLabel,
+      reason: `dispute upheld${params.note ? ` — ${params.note}` : ""}`,
+    });
+    return updated;
+  });
+}
+
+/**
+ * Pay out every held fee whose dispute window has passed without a dispute.
+ * Frozen (disputed) money is untouched. Runs lazily, like the no-show sweep.
+ */
+export async function releaseDuePayouts(params: { businessId?: string; now?: Date } = {}) {
+  const now = params.now ?? new Date();
+  const { count } = await db.charge.updateMany({
+    where: {
+      status: CHARGE_STATUS.SUCCEEDED,
+      payoutStatus: PAYOUT_STATUS.HELD,
+      payoutReleaseAt: { lte: now },
+      ...(params.businessId ? { booking: { businessId: params.businessId } } : {}),
+    },
+    data: { payoutStatus: PAYOUT_STATUS.RELEASED },
+  });
+  return count;
+}
+
+/** Platform action. A suspended business takes no bookings and collects nothing. */
+export async function setSuspended(params: { businessId: string; suspended: boolean }) {
+  return db.business.update({
+    where: { id: params.businessId },
+    data: {
+      suspendedAt: params.suspended ? new Date() : null,
+      // Out of search while suspended; the owner republishes afterwards.
+      ...(params.suspended ? { published: false } : {}),
+    },
+  });
+}
+
+export { SETUP_WINDOW_MS, DISPUTE_WINDOW_MS };

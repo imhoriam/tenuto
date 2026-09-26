@@ -9,13 +9,18 @@ import { TZDate } from "@date-fns/tz";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import "dotenv/config";
 
+import { nanoid } from "nanoid";
+
 import { PrismaClient } from "../src/generated/prisma/client";
+import { hashPassword } from "../src/lib/auth/password";
 import {
   ACTOR,
   BOOKING_STATUS,
   CHANNEL,
   CHARGE_STATUS,
   CHECKIN_METHOD,
+  DISPUTE_WINDOW_DAYS,
+  PAYOUT_STATUS,
   MANDATE_STATUS,
   REQUIREMENT,
   RESOURCE_KIND,
@@ -32,6 +37,9 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 
 const TIMEZONE = "Europe/Bucharest";
+
+/** Demo login for the seeded restaurant. Shown on /login outside production. */
+const DEMO_LOGIN = { loginName: "hanul-cu-tei", password: "tenuto-demo" };
 /** Open for lunch and dinner, Tue–Sun. Closed Monday. */
 const OPEN_MINUTE = 12 * 60;
 const CLOSE_MINUTE = 23 * 60;
@@ -153,6 +161,25 @@ async function main() {
       cancellationWindowHours: 24,
       noShowFeeCents: 5000, // 50 RON
       gracePeriodMin: 15,
+      category: "Restaurant românesc",
+      description:
+        "Bucătărie românească de casă în inima Centrului Vechi. Ciorbă de burtă, sarmale cu mămăligă și papanași ca la bunica, sub teii din curtea interioară.",
+      website: "https://hanulcutei.example",
+      priceLevel: 2,
+      legalName: "Hanul cu Tei S.R.L.",
+      taxId: "14399840", // a checksum-valid CUI; demo data
+      tradeRegisterNo: "J40/1234/2015",
+      registeredAddress: "Strada Lipscani 12, Sector 3, București",
+      vatPayer: true,
+      published: true,
+    },
+  });
+
+  await db.account.create({
+    data: {
+      loginName: DEMO_LOGIN.loginName,
+      passwordHash: await hashPassword(DEMO_LOGIN.password),
+      businessId: business.id,
     },
   });
 
@@ -160,7 +187,10 @@ async function main() {
     data: {
       businessId: business.id,
       name: "Centru Vechi",
-      address: "Strada Lipscani 12, București",
+      address: "Strada Lipscani 12",
+      city: "București",
+      county: "București",
+      postalCode: "030033",
       lat: 44.4310,
       lng: 26.1010,
     },
@@ -309,6 +339,9 @@ async function main() {
     noShowMarkedOffsetMs?: number;
     chargeStatus?: string;
     note?: string;
+    /** For collected fees: where the money is, and the customer's dispute. */
+    payoutStatus?: string;
+    disputeReason?: string;
   };
 
   const stages: Stage[] = [
@@ -325,7 +358,8 @@ async function main() {
       note: "Masă lângă fereastră, vă rog.",
     },
     {
-      // 25 minutes late, grace window blown. The dashboard offers "mark absent".
+      // 25 minutes late, grace window blown. Opening the dashboard records the
+      // no-show automatically, frees the table and makes the fee collectable.
       customer: firstTimer,
       table: tables[2],
       partySize: 4,
@@ -366,6 +400,36 @@ async function main() {
       feeCents: 5000,
       noShowMarkedOffsetMs: -7 * 24 * HOUR + 20 * MIN,
       chargeStatus: CHARGE_STATUS.SUCCEEDED,
+      payoutStatus: PAYOUT_STATUS.RELEASED,
+    },
+    {
+      // Two days ago: absent, charged, money still held — the customer can
+      // still dispute it from their booking page.
+      customer: firstTimer,
+      table: tables[2],
+      partySize: 2,
+      startOffsetMs: -2 * 24 * HOUR,
+      status: BOOKING_STATUS.CHARGE_SUCCEEDED,
+      requirement: REQUIREMENT.CARD_ON_FILE,
+      feeCents: 5000,
+      noShowMarkedOffsetMs: -2 * 24 * HOUR + 16 * MIN,
+      chargeStatus: CHARGE_STATUS.SUCCEEDED,
+      payoutStatus: PAYOUT_STATUS.HELD,
+    },
+    {
+      // Three days ago: charged, and the customer says they were there.
+      // The money is frozen until the restaurant refunds or Tenuto decides.
+      customer: largeParty,
+      table: tables[4],
+      partySize: 4,
+      startOffsetMs: -3 * 24 * HOUR,
+      status: BOOKING_STATUS.DISPUTED,
+      requirement: REQUIREMENT.CARD_ON_FILE,
+      feeCents: 5000,
+      noShowMarkedOffsetMs: -3 * 24 * HOUR + 16 * MIN,
+      chargeStatus: CHARGE_STATUS.SUCCEEDED,
+      payoutStatus: PAYOUT_STATUS.FROZEN,
+      disputeReason: "Am ajuns la 20:10 și am stat la masă, dar nimeni nu a marcat sosirea.",
     },
     {
       // Upcoming tonight.
@@ -406,6 +470,7 @@ async function main() {
     const booking = await db.booking.create({
       data: {
         reference: reference(),
+        accessToken: nanoid(24),
         businessId: business.id,
         serviceId: dinner.id,
         resourceId: stage.table.id,
@@ -428,8 +493,8 @@ async function main() {
             ? at(stage.noShowMarkedOffsetMs)
             : null,
         chargeableAt:
-          stage.noShowMarkedOffsetMs !== undefined
-            ? new Date(at(stage.noShowMarkedOffsetMs).getTime() + 2 * HOUR)
+          stage.noShowMarkedOffsetMs !== undefined && stage.status === BOOKING_STATUS.NO_SHOW_PENDING
+            ? at(stage.noShowMarkedOffsetMs)
             : null,
         policySnapshot: {
           create: {
@@ -468,10 +533,9 @@ async function main() {
       await db.checkIn.create({
         data: {
           bookingId: booking.id,
-          method: CHECKIN_METHOD.QR,
+          method: CHECKIN_METHOD.MANUAL,
           at: at(stage.checkedInOffsetMs),
-          lat: location.lat,
-          lng: location.lng,
+          actorLabel: "staff",
         },
       });
     }
@@ -487,10 +551,16 @@ async function main() {
           provider: "mock",
           providerRef: `pi_mock_${booking.id.slice(-8)}`,
           succeededAt:
-            stage.chargeStatus === CHARGE_STATUS.SUCCEEDED
-              ? at(stage.noShowMarkedOffsetMs! + 2 * HOUR)
-              : null,
+            stage.chargeStatus === CHARGE_STATUS.SUCCEEDED ? at(stage.noShowMarkedOffsetMs!) : null,
+          payoutStatus: stage.payoutStatus ?? PAYOUT_STATUS.RELEASED,
+          payoutReleaseAt: new Date(at(stage.noShowMarkedOffsetMs!).getTime() + DISPUTE_WINDOW_DAYS * 24 * HOUR),
         },
+      });
+    }
+
+    if (stage.disputeReason) {
+      await db.dispute.create({
+        data: { bookingId: booking.id, reason: stage.disputeReason, openedAt: at(-1 * 24 * HOUR) },
       });
     }
 
@@ -516,6 +586,8 @@ async function main() {
     });
   }
 
+  await seedNeighbours();
+
   const counts = {
     businesses: await db.business.count(),
     tables: await db.resource.count(),
@@ -531,7 +603,113 @@ async function main() {
       : `Outside service hours; anchored to ${NOW.toISOString()} so the data stays coherent.`,
   );
   console.log(`\nBooking page:  /book/${business.slug}`);
-  console.log(`Dashboard:     /dashboard/${business.slug}`);
+  console.log(`Dashboard:     /dashboard/${business.slug}  (${DEMO_LOGIN.loginName} / ${DEMO_LOGIN.password})`);
+  const held = await db.booking.findFirst({
+    where: { businessId: business.id, status: BOOKING_STATUS.CHARGE_SUCCEEDED, charges: { some: { payoutStatus: PAYOUT_STATUS.HELD } } },
+  });
+  if (held?.accessToken) console.log(`Disputable:    /r/${held.accessToken}  (a held fee the customer can contest)`);
+  console.log(`Admin:         /admin  (set TENUTO_ADMIN_PASSWORD; user "tenuto")`);
+}
+
+/**
+ * A few more published restaurants so public search has something to search.
+ * No bookings — they exist to be found and booked.
+ */
+async function seedNeighbours() {
+  const venues = [
+    {
+      slug: "osteria-del-porto",
+      name: "Osteria del Porto",
+      category: "Restaurant italian",
+      city: "Cluj-Napoca",
+      county: "Cluj",
+      address: "Strada Iuliu Maniu 8",
+      postalCode: "400095",
+      priceLevel: 3,
+      description: "Paste făcute în casă, peste proaspăt de două ori pe săptămână și o pivniță de vinuri din Piemont și Sicilia.",
+      tables: [2, 2, 2, 4, 4, 6],
+      hours: [{ days: [2, 3, 4, 5, 6, 0], open: 12 * 60, close: 23 * 60 }],
+    },
+    {
+      slug: "bistro-sfatului",
+      name: "Bistro Sfatului",
+      category: "Bistro",
+      city: "Brașov",
+      county: "Brașov",
+      address: "Piața Sfatului 14",
+      postalCode: "500031",
+      priceLevel: 2,
+      description: "Mic dejun toată ziua, prânz rapid și cină cu vedere spre Tâmpa. Terasă deschisă din aprilie până în octombrie.",
+      tables: [2, 2, 4, 4, 4, 8],
+      hours: [{ days: [1, 2, 3, 4, 5, 6, 0], open: 9 * 60, close: 22 * 60 }],
+    },
+    {
+      slug: "sushi-kaiten-timisoara",
+      name: "Kaiten",
+      category: "Restaurant de sushi",
+      city: "Timișoara",
+      county: "Timiș",
+      address: "Strada Alba Iulia 2",
+      postalCode: "300077",
+      priceLevel: 3,
+      description: "Omakase la bar pentru opt persoane și meniu à la carte în sală. Vinerea și sâmbăta deschis până la 01:00.",
+      tables: [2, 2, 2, 2, 4, 4],
+      hours: [
+        { days: [2, 3, 4, 0], open: 18 * 60, close: 23 * 60 },
+        { days: [5, 6], open: 18 * 60, close: 25 * 60 }, // past midnight, see CLAUDE.md §11
+      ],
+    },
+  ];
+
+  for (const v of venues) {
+    const business = await db.business.create({
+      data: {
+        slug: v.slug,
+        name: v.name,
+        vertical: VERTICAL.RESTAURANT,
+        timezone: TIMEZONE,
+        currency: "RON",
+        category: v.category,
+        description: v.description,
+        priceLevel: v.priceLevel,
+        phone: "+40 700 000 000",
+        legalName: `${v.name} S.R.L.`,
+        taxId: "14399840",
+        tradeRegisterNo: "J12/100/2020",
+        registeredAddress: `${v.address}, ${v.city}`,
+        published: true,
+        locations: {
+          create: { name: "Principal", address: v.address, city: v.city, county: v.county, postalCode: v.postalCode },
+        },
+        services: {
+          create: { name: "Masă", description: "Masă rezervată pentru 2 ore.", durationMin: 120, bufferAfterMin: 15, usesPartySize: true },
+        },
+        policyRules: {
+          create: [
+            { name: "Clienții fideli rezervă fără card", priority: 10, minCompletedHere: 3, requirement: REQUIREMENT.NONE },
+            { name: "Toți ceilalți lasă card", priority: 100, requirement: REQUIREMENT.CARD_ON_FILE },
+          ],
+        },
+      },
+      include: { locations: true },
+    });
+
+    await db.resource.createMany({
+      data: v.tables.map((capacity, i) => ({
+        businessId: business.id,
+        locationId: business.locations[0].id,
+        name: `M${i + 1}`,
+        kind: RESOURCE_KIND.TABLE,
+        capacity,
+      })),
+    });
+
+    await db.scheduleRule.createMany({
+      data: v.hours.flatMap((h) =>
+        h.days.map((weekday) => ({ businessId: business.id, weekday, startMinute: h.open, endMinute: h.close })),
+      ),
+    });
+  }
 }
 
 main()

@@ -56,10 +56,22 @@ export type ChargeResult =
       retryable: boolean;
     };
 
+export interface RefundParams {
+  /** The provider's reference for the original charge. */
+  chargeRef: string;
+  amountCents: number;
+  /** Stable per refund; a retried refund must not pay out twice. */
+  idempotencyKey: string;
+}
+
+export type RefundResult = { ok: true; refundRef: string } | { ok: false; code: string; message: string };
+
 export interface PaymentProvider {
   readonly name: string;
   saveCard(params: SaveCardParams): Promise<SavedCard>;
   chargeOffSession(params: ChargeParams): Promise<ChargeResult>;
+  /** Return a collected fee in full. Used for waivers and upheld disputes. */
+  refund(params: RefundParams): Promise<RefundResult>;
 }
 
 /**

@@ -1,26 +1,246 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/*
+ * Tenuto — risograph system.
+ *
+ * Two inks on one warm paper. Fluorescent pink is the only interaction colour
+ * (every button, every focus ring). Federal blue carries structure: headings,
+ * rules, outlines and the offset print-shadow. Where the two inks overlap they
+ * multiply into a deep violet, exactly as they would on a riso drum.
+ *
+ * Contrast notes (WCAG 2.2 AA):
+ *  - pink is never a text colour on paper (2.8:1). Text on pink is ink (5.3:1).
+ *  - blue on paper is 7.9:1, paper on blue 7.9:1 — safe for body text.
+ *  - pink on blue is decoration or display size only.
+ */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-paper: #f4eee1;
+  --color-sheet: #fffcf5;
+  --color-cream: #eae1cf;
+  --color-ink: #15193b;
+  --color-ink-soft: #262c5c;
+  --color-blue: #2c40a7;
+  --color-blue-deep: #1f2f85;
+  --color-blue-soft: #dce1f6;
+  --color-pink: #f237a1;
+  --color-pink-deep: #b0156d; /* text-safe on paper: 5.7:1 */
+  --color-pink-soft: #fcdcee;
+  --color-violet: #4a1f73; /* pink × blue, multiplied */
+  --color-line: #d4cab6;
+  --color-muted: #4a4f6e;
+  --color-faint: #80859f;
+
+  /* Legacy aliases, so older class names land on the new inks. */
+  --color-accent: #f237a1;
+  --color-accent-deep: #b0156d;
+  --color-accent-soft: #fcdcee;
+
+  --font-sans: var(--font-space-grotesk);
+  --font-display: var(--font-space-grotesk);
+  --font-mono: var(--font-overpass-mono);
+
+  --shadow-print: 4px 4px 0 var(--color-blue);
+  --shadow-print-lg: 8px 8px 0 var(--color-blue);
+  --shadow-print-pink: 6px 6px 0 var(--color-pink);
+
+  --animate-marquee: marquee 38s linear infinite;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "ss02";
+}
+
+/* Paper grain over everything. Fixed, so it doesn't swim when scrolling. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0.1;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .08 0 0 0 0 .1 0 0 0 0 .23 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+::selection {
+  background: var(--color-pink);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-pink);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Print effects
+ * ------------------------------------------------------------------------- */
+
+/*
+ * Overprinted type: the word is set in pink, and a blue plate of the same word
+ * sits a hair off-register on top, multiplied. Needs data-text="…".
+ */
+.overprint {
+  position: relative;
+  display: inline-block;
+  color: var(--color-pink);
+}
+.overprint::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  color: var(--color-blue);
+  mix-blend-mode: multiply;
+  transform: translate(0.045em, 0.035em);
+  pointer-events: none;
+  transition: transform 0.5s cubic-bezier(0.3, 1.6, 0.4, 1);
+}
+.overprint:hover::after,
+.group:hover .overprint::after {
+  transform: translate(-0.03em, 0.05em);
+}
+
+/* Halftone dot screens. */
+.halftone-pink {
+  background-image: radial-gradient(var(--color-pink) 28%, transparent 30%);
+  background-size: 9px 9px;
+}
+.halftone-blue {
+  background-image: radial-gradient(var(--color-blue) 26%, transparent 28%);
+  background-size: 8px 8px;
+}
+.halftone-fade {
+  mask-image: linear-gradient(115deg, #000 10%, transparent 75%);
+}
+
+/* A button that is a block of ink with a hard shadow, and presses into it. */
+.press {
+  box-shadow: var(--shadow-print);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    background-color 0.15s ease;
+}
+.press:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--color-blue);
+}
+.press:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--color-blue);
+}
+
+/* Ticket perforation along the top/bottom edge of an element. */
+.perforated {
+  --hole: 7px;
+  mask:
+    radial-gradient(circle var(--hole) at var(--hole) 0, #0000 98%, #000) 0 0 / calc(var(--hole) * 3) 51% repeat-x,
+    radial-gradient(circle var(--hole) at var(--hole) 100%, #0000 98%, #000) 0 100% / calc(var(--hole) * 3) 51% repeat-x;
+}
+
+/* Scrolling ticker. */
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes stamp {
+  0% {
+    opacity: 0;
+    transform: scale(1.8) rotate(var(--r, -9deg));
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.94) rotate(var(--r, -9deg));
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(var(--r, -9deg));
+  }
+}
+.stamp {
+  transform: rotate(var(--r, -9deg));
+  animation: stamp 0.55s cubic-bezier(0.3, 1.4, 0.5, 1) both;
+  animation-delay: var(--d, 0.6s);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* The held note on the staff: the tenuto bar breathes. */
+@keyframes hold {
+  0%,
+  100% {
+    transform: scaleX(1);
+  }
+  50% {
+    transform: scaleX(1.08);
+  }
+}
+.hold {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hold 2.6s ease-in-out infinite;
+}
+
+@keyframes blink-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.live-dot {
+  animation: blink-dot 1.6s ease-in-out infinite;
+}
+
+/* Logo plates drift out of register on hover. */
+.logo-plate {
+  transition: transform 0.45s cubic-bezier(0.3, 1.6, 0.4, 1);
+}
+.group:hover .logo-plate-pink {
+  transform: translate(-1.2px, 0.8px);
+}
+.group:hover .logo-plate-blue {
+  transform: translate(1px, -0.6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .stamp,
+  .hold,
+  .live-dot,
+  .animate-marquee {
+    animation: none !important;
+  }
+  .press,
+  .logo-plate,
+  .overprint::after {
+    transition: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
 }
