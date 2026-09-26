@@ -1,5 +1,5 @@
 /**
- * Restaurant profile helpers. Pure — no database, no Next — so they test
+ * Business profile helpers. Pure — no database, no Next — so they test
  * without either.
  *
  * The public profile mirrors the fields of a Google Business Profile (name,
@@ -7,29 +7,182 @@
  * so an operator can copy theirs across field by field.
  */
 
-/** A subset of Google's restaurant categories, in the wording Romanians search. */
-export const CATEGORIES = [
-  "Restaurant",
-  "Restaurant românesc",
-  "Restaurant italian",
-  "Restaurant mediteranean",
-  "Restaurant grecesc",
-  "Restaurant francez",
-  "Restaurant asiatic",
-  "Restaurant japonez",
-  "Restaurant de sushi",
-  "Restaurant libanez",
-  "Restaurant de pește și fructe de mare",
-  "Restaurant vegetarian",
-  "Pizzerie",
-  "Steakhouse",
-  "Bistro",
-  "Brasserie",
-  "Cafenea",
-  "Bar",
-  "Wine bar",
-  "Berărie",
-] as const;
+import type { ResourceKind } from "./constants";
+
+type Unit = { one: string; many: string; article: "un" | "o"; kind: ResourceKind };
+
+type Vertical = {
+  label: string;
+  /** What is booked: a table seats a party; everything else is one customer. */
+  unit: Unit;
+  usesPartySize: boolean;
+  categories: readonly string[];
+};
+
+/** Google-style categories, grouped by what the business actually rents out. */
+export const VERTICALS = {
+  restaurant: {
+    label: "Restaurante, cafenele și baruri",
+    unit: { one: "masă", many: "mese", article: "o", kind: "table" },
+    usesPartySize: true,
+    categories: [
+      "Restaurant",
+      "Restaurant românesc",
+      "Restaurant italian",
+      "Restaurant mediteranean",
+      "Restaurant grecesc",
+      "Restaurant francez",
+      "Restaurant asiatic",
+      "Restaurant japonez",
+      "Restaurant de sushi",
+      "Restaurant libanez",
+      "Restaurant de pește și fructe de mare",
+      "Restaurant vegetarian",
+      "Pizzerie",
+      "Steakhouse",
+      "Bistro",
+      "Brasserie",
+      "Cafenea",
+      "Bar",
+      "Wine bar",
+      "Berărie",
+    ],
+  },
+  beauty: {
+    label: "Frumusețe și îngrijire",
+    unit: { one: "post", many: "posturi", article: "un", kind: "chair" },
+    usesPartySize: false,
+    categories: [
+      "Salon de înfrumusețare",
+      "Coafor",
+      "Frizerie",
+      "Barbershop",
+      "Salon de manichiură",
+      "Salon de cosmetică",
+      "Salon de gene și sprâncene",
+      "Salon de masaj",
+      "Spa",
+      "Salon de bronzare",
+      "Salon de epilare",
+    ],
+  },
+  health: {
+    label: "Sănătate",
+    unit: { one: "specialist", many: "specialiști", article: "un", kind: "practitioner" },
+    usesPartySize: false,
+    categories: [
+      "Cabinet stomatologic",
+      "Clinică medicală",
+      "Cabinet medical",
+      "Cabinet de kinetoterapie",
+      "Cabinet de fizioterapie",
+      "Cabinet de psihologie",
+      "Cabinet de nutriție",
+      "Cabinet oftalmologic",
+      "Clinică dermatologică",
+      "Clinică de estetică",
+      "Clinică veterinară",
+      "Laborator de analize",
+    ],
+  },
+  auto: {
+    label: "Auto",
+    unit: { one: "boxă", many: "boxe", article: "o", kind: "bay" },
+    usesPartySize: false,
+    categories: [
+      "Detailing auto",
+      "Service auto",
+      "Spălătorie auto",
+      "Vulcanizare",
+      "Stație ITP",
+      "Tuning și folie auto",
+      "Service moto",
+    ],
+  },
+  studio: {
+    label: "Studiouri și ateliere",
+    unit: { one: "post", many: "posturi", article: "un", kind: "chair" },
+    usesPartySize: false,
+    categories: [
+      "Studio de tatuaj",
+      "Studio de piercing",
+      "Studio foto",
+      "Studio de înregistrări",
+      "Sală de repetiții",
+      "Atelier de ceramică",
+      "Atelier creativ",
+    ],
+  },
+  sport: {
+    label: "Sport și timp liber",
+    unit: { one: "teren sau sală", many: "terenuri și săli", article: "un", kind: "room" },
+    usesPartySize: false,
+    categories: [
+      "Teren de tenis",
+      "Teren de padel",
+      "Teren de fotbal",
+      "Teren de baschet",
+      "Sală de fitness",
+      "Antrenor personal",
+      "Studio de yoga",
+      "Studio de pilates",
+      "Sală de dans",
+      "Bowling",
+      "Biliard",
+      "Escape room",
+      "Karting",
+    ],
+  },
+  services: {
+    label: "Servicii profesionale",
+    unit: { one: "specialist", many: "specialiști", article: "un", kind: "practitioner" },
+    usesPartySize: false,
+    categories: [
+      "Consultanță",
+      "Cabinet de avocatură",
+      "Birou notarial",
+      "Contabilitate",
+      "Meditații",
+      "Școală de șoferi",
+      "Croitorie",
+      "Service electronice",
+    ],
+  },
+  other: {
+    label: "Altceva",
+    unit: { one: "loc", many: "locuri", article: "un", kind: "room" },
+    usesPartySize: false,
+    categories: [],
+  },
+} as const satisfies Record<string, Vertical>;
+
+export type VerticalKey = keyof typeof VERTICALS;
+
+export const CATEGORIES: readonly string[] = Object.values(VERTICALS).flatMap((v) => v.categories);
+
+/** The select value that reveals a free-text category. */
+export const CUSTOM_CATEGORY = "__custom__";
+export const CUSTOM_CATEGORY_MAX = 60;
+
+/**
+ * Which vertical a category belongs to. A category typed by the owner is
+ * "other". No category yet means a fresh registration, whose defaults are a
+ * restaurant's (tables, party size).
+ */
+export function verticalOf(category: string | null | undefined): VerticalKey {
+  if (!category) return "restaurant";
+  for (const [key, v] of Object.entries(VERTICALS)) {
+    if ((v.categories as readonly string[]).includes(category)) return key as VerticalKey;
+  }
+  return "other";
+}
+
+/** "Boxă 3", "Specialist 2". Tables keep the host-stand shorthand "M3". */
+export function defaultResourceName(vertical: VerticalKey, n: number): string {
+  if (vertical === "restaurant") return `M${n}`;
+  const one = VERTICALS[vertical].unit.one.split(" ")[0];
+  return `${one.charAt(0).toUpperCase()}${one.slice(1)} ${n}`;
+}
 
 /** Google shows a price range per person; these are the RON bands. */
 export const PRICE_LEVELS = [
@@ -211,7 +364,7 @@ export interface ReadinessInput {
 }
 
 /**
- * What still stands between this restaurant and a bookable public page. An
+ * What still stands between this business and a bookable public page. An
  * empty list means it can be published.
  */
 export function missingForPublish(b: ReadinessInput): string[] {
@@ -220,7 +373,10 @@ export function missingForPublish(b: ReadinessInput): string[] {
   if (!b.phone) missing.push("Telefonul");
   if (!b.address || !b.city) missing.push("Adresa");
   if (b.scheduleRules === 0) missing.push("Programul");
-  if (b.activeTables === 0) missing.push("Cel puțin o masă");
+  if (b.activeTables === 0) {
+    const u = VERTICALS[verticalOf(b.category)].unit;
+    missing.push(`Cel puțin ${u.article} ${u.one}`);
+  }
   if (!b.legalName || !b.taxId || !b.tradeRegisterNo || !b.registeredAddress) {
     missing.push("Datele firmei");
   }

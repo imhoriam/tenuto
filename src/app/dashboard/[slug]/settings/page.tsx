@@ -48,7 +48,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
           <p className="relative font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-pink-soft">Cont creat</p>
           <p className="relative mt-2 text-4xl font-bold tracking-[-0.05em] sm:text-5xl">Bine ai venit, {b.name}.</p>
           <p className="relative mt-2 max-w-xl text-paper/85">
-            Completează secțiunile de mai jos — exact ca pe profilul tău Google. Când totul e gata, publici restaurantul
+            Completează secțiunile de mai jos — exact ca pe profilul tău Google. Când totul e gata, publici afacerea
             și apare în căutare.
           </p>
         </div>

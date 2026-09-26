@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  CATEGORIES,
+  VERTICALS,
+  defaultResourceName,
   describeDay,
   hoursToRules,
   isValidCui,
@@ -10,6 +13,7 @@ import {
   normaliseCui,
   rulesToHours,
   slugify,
+  verticalOf,
 } from "./business-profile";
 
 test("a real CUI validates, with or without the RO prefix and spacing", () => {
@@ -102,6 +106,35 @@ test("a restaurant is publishable only once it can actually take a booking", () 
   assert.deepEqual(missingForPublish(complete), []);
   assert.deepEqual(missingForPublish({ ...complete, activeTables: 0 }), ["Cel puțin o masă"]);
   assert.deepEqual(missingForPublish({ ...complete, taxId: null }), ["Datele firmei"]);
+  assert.deepEqual(missingForPublish({ ...complete, category: "Frizerie", activeTables: 0 }), ["Cel puțin un post"]);
+  assert.deepEqual(missingForPublish({ ...complete, category: "Detailing auto", activeTables: 0 }), ["Cel puțin o boxă"]);
+});
+
+test("a category maps to its vertical; a typed one is 'other'; none yet is a restaurant", () => {
+  assert.equal(verticalOf("Bistro"), "restaurant");
+  assert.equal(verticalOf("Frizerie"), "beauty");
+  assert.equal(verticalOf("Cabinet stomatologic"), "health");
+  assert.equal(verticalOf("Detailing auto"), "auto");
+  assert.equal(verticalOf("Școală de înot"), "other");
+  assert.equal(verticalOf(null), "restaurant");
+  assert.equal(verticalOf(""), "restaurant");
+});
+
+test("only restaurants book by party size", () => {
+  for (const [key, v] of Object.entries(VERTICALS)) {
+    assert.equal(v.usesPartySize, key === "restaurant", key);
+  }
+});
+
+test("no category is listed under two verticals", () => {
+  assert.equal(new Set(CATEGORIES).size, CATEGORIES.length);
+});
+
+test("default resource names follow the vertical", () => {
+  assert.equal(defaultResourceName("restaurant", 3), "M3");
+  assert.equal(defaultResourceName("auto", 1), "Boxă 1");
+  assert.equal(defaultResourceName("health", 2), "Specialist 2");
+  assert.equal(defaultResourceName("sport", 1), "Teren 1");
 });
 
 test("open now respects today's intervals", async () => {

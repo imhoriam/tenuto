@@ -31,7 +31,7 @@ export default async function SharePage({ params }: PageProps<"/dashboard/[slug]
       <h1 className="font-bold tracking-[-0.04em] text-4xl tracking-tight sm:text-5xl">Link și QR de rezervare</h1>
       <p className="mt-2 max-w-xl text-muted">
         Oriunde îl pui, clienții rezervă direct la tine — fără cont, fără aplicație.
-        {!business.published ? " Linkul funcționează chiar dacă restaurantul nu apare încă în căutare." : ""}
+        {!business.published ? " Linkul funcționează chiar dacă afacerea nu apare încă în căutare." : ""}
       </p>
 
       <div className="mt-8 grid gap-5 lg:grid-cols-[1fr_22rem]">

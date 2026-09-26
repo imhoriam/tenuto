@@ -60,6 +60,7 @@ export default async function DashboardPage({ params }: PageProps<"/dashboard/[s
       include: {
         customer: true,
         resource: true,
+        service: { select: { usesPartySize: true } },
         mandate: true,
         charges: { orderBy: { attempt: "asc" } },
         policySnapshot: true,
@@ -122,7 +123,7 @@ export default async function DashboardPage({ params }: PageProps<"/dashboard/[s
     if (status === BOOKING_STATUS.CONFIRMED && now < graceEnd && now >= b.startAt) {
       hint = `Toleranță: încă ${untilLabel(graceEnd, now)}`;
     } else if (status === BOOKING_STATUS.NO_SHOW_PENDING) {
-      hint = "Masa s-a eliberat · taxa se poate încasa. A venit totuși? Marchează-l sosit.";
+      hint = "Locul s-a eliberat · taxa se poate încasa. A venit totuși? Marchează-l sosit.";
     } else if (status === BOOKING_STATUS.DISPUTED) {
       hint = `Clientul contestă${b.dispute?.reason ? `: „${b.dispute.reason}”` : ""} · banii sunt blocați până la rezolvare`;
     } else if (status === BOOKING_STATUS.CHARGE_SUCCEEDED) {
@@ -138,7 +139,7 @@ export default async function DashboardPage({ params }: PageProps<"/dashboard/[s
       time: timeIn(b.startAt, business.timezone),
       day: dayIn(b.startAt, business.timezone),
       isToday: dayIn(b.startAt, business.timezone) === dayIn(now, business.timezone),
-      partySize: b.partySize,
+      partySize: b.service.usesPartySize ? b.partySize : null,
       table: b.resource.name,
       customerName: b.customer.name,
       customerPhone: b.customer.phone,
@@ -226,7 +227,7 @@ export default async function DashboardPage({ params }: PageProps<"/dashboard/[s
           value={money(onHold._sum.amountCents ?? 0, business.currency)}
           sub={`${DISPUTE_WINDOW_DAYS} zile pentru contestații`}
         />
-        <Stat label="Toleranță" value={`${business.gracePeriodMin} min`} sub="apoi masa se eliberează" />
+        <Stat label="Toleranță" value={`${business.gracePeriodMin} min`} sub="apoi locul se eliberează" />
       </div>
 
       <ServiceBoard

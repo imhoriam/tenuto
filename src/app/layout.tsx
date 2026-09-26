@@ -14,11 +14,11 @@ const overpassMono = Overpass_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Tenuto — Masa e ținută. Rezervarea e onorată.",
+    default: "Tenuto — Garanția e ținută. Rezervarea e onorată.",
     template: "%s · Tenuto",
   },
   description:
-    "Rezervări fără cont și fără aplicație. Clientul nu plătește nimic ca să rezerve; cardul e taxat doar dacă nu ajunge.",
+    "Rezervări pentru orice afacere — restaurante, saloane, clinici, service-uri, studiouri. Fără cont și fără aplicație; cardul e taxat doar dacă clientul nu vine.",
 };
 
 export const viewport: Viewport = {

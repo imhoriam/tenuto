@@ -16,7 +16,7 @@ export function RegisterForm() {
   return (
     <form action={action} className="space-y-5">
       <label className="block">
-        <span className={field.label}>Numele restaurantului</span>
+        <span className={field.label}>Numele afacerii</span>
         <input
           name="restaurantName"
           value={name}
@@ -83,7 +83,7 @@ export function RegisterForm() {
       ) : null}
 
       <button type="submit" disabled={pending} className={`${btn.primary} w-full py-3.5`}>
-        {pending ? "Se creează contul…" : "Creează contul restaurantului"}
+        {pending ? "Se creează contul…" : "Creează contul"}
       </button>
     </form>
   );

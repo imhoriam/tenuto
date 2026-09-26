@@ -4,16 +4,20 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { db } from "@/lib/db";
-import { REQUIREMENT, RESOURCE_KIND } from "@/lib/constants";
+import { REQUIREMENT } from "@/lib/constants";
 import { authorizeBusiness } from "@/lib/auth/session";
 import {
   CATEGORIES,
+  CUSTOM_CATEGORY,
+  CUSTOM_CATEGORY_MAX,
   DESCRIPTION_MAX,
+  VERTICALS,
   hoursToRules,
   isValidCui,
   isValidTradeRegisterNo,
   missingForPublish,
   normaliseCui,
+  verticalOf,
   type WeekHours,
 } from "@/lib/business-profile";
 
@@ -56,7 +60,7 @@ async function readiness(businessId: string) {
   });
 }
 
-/** Search must never list a restaurant that cannot take a booking. */
+/** Search must never list a business that cannot take a booking. */
 async function unpublishIfIncomplete(businessId: string) {
   if ((await readiness(businessId)).length > 0) {
     await db.business.updateMany({ where: { id: businessId, published: true }, data: { published: false } });
@@ -76,7 +80,8 @@ function ro(n: number, one: string, many: string): string {
 
 const profileSchema = z.object({
   name: z.string().trim().min(2, "Numele este prea scurt.").max(80),
-  category: z.enum(CATEGORIES, { message: "Alegeți o categorie." }),
+  category: z.string().refine((c) => c === CUSTOM_CATEGORY || CATEGORIES.includes(c), "Alegeți o categorie."),
+  customCategory: z.string().trim().max(CUSTOM_CATEGORY_MAX, `Categoria are maximum ${CUSTOM_CATEGORY_MAX} de caractere.`).optional(),
   description: z.string().trim().max(DESCRIPTION_MAX, `Descrierea are maximum ${DESCRIPTION_MAX} de caractere.`),
   phone: z
     .string()
@@ -101,12 +106,25 @@ export async function saveProfile(_prev: SaveState, formData: FormData): Promise
     if (website && !/^https?:\/\//i.test(website)) website = `https://${website}`;
     if (website && !URL.canParse(website)) return { error: "Adresa site-ului nu este validă." };
 
+    let category = v.category;
+    if (category === CUSTOM_CATEGORY) {
+      category = v.customCategory ?? "";
+      if (category.length < 3) return { error: "Scrieți categoria afacerii (minimum 3 caractere)." };
+    }
+    const vertical = VERTICALS[verticalOf(category)];
+
     await db.$transaction(async (tx) => {
+      // Party size only means something where a table seats a group.
+      await tx.service.updateMany({
+        where: { businessId: business.id },
+        data: { usesPartySize: vertical.usesPartySize },
+      });
+      await tx.resource.updateMany({ where: { businessId: business.id }, data: { kind: vertical.unit.kind } });
       await tx.business.update({
         where: { id: business.id },
         data: {
           name: v.name,
-          category: v.category,
+          category,
           description: v.description || null,
           phone: v.phone,
           email: v.email || null,
@@ -183,7 +201,7 @@ const tablesSchema = z
   .array(
     z.object({
       id: z.string().optional(),
-      name: z.string().trim().min(1, "Fiecare masă are nevoie de un nume.").max(20),
+      name: z.string().trim().min(1, "Fiecare rând are nevoie de un nume.").max(30),
       capacity: z.coerce.number().int().min(1, "Minimum 1 loc.").max(30, "Maximum 30 de locuri."),
     }),
   )
@@ -195,23 +213,29 @@ export async function saveTables(_prev: SaveState, formData: FormData): Promise<
     try {
       raw = JSON.parse(data.tables ?? "[]");
     } catch {
-      return { error: "Listă de mese invalidă." };
+      return { error: "Listă invalidă." };
     }
     const parsed = tablesSchema.safeParse(raw);
     if (!parsed.success) return { error: first(parsed.error.issues) };
 
-    const names = parsed.data.map((t) => t.name.toLowerCase());
-    if (new Set(names).size !== names.length) return { error: "Două mese au același nume." };
+    const { unit, usesPartySize } = VERTICALS[verticalOf(business.category)];
+    const rows = parsed.data.map((t) => ({ ...t, capacity: usesPartySize ? t.capacity : 1 }));
+
+    const names = rows.map((t) => t.name.toLowerCase());
+    if (new Set(names).size !== names.length) return { error: "Două rânduri au același nume." };
 
     const location = await db.location.findFirst({ where: { businessId: business.id } });
     const existing = await db.resource.findMany({ where: { businessId: business.id } });
-    const keep = new Set(parsed.data.map((t) => t.id).filter(Boolean));
+    const keep = new Set(rows.map((t) => t.id).filter(Boolean));
 
     await db.$transaction(async (tx) => {
-      for (const t of parsed.data) {
+      for (const t of rows) {
         const own = t.id && existing.some((e) => e.id === t.id);
         if (own) {
-          await tx.resource.update({ where: { id: t.id }, data: { name: t.name, capacity: t.capacity, active: true } });
+          await tx.resource.update({
+            where: { id: t.id },
+            data: { name: t.name, capacity: t.capacity, kind: unit.kind, active: true },
+          });
         } else {
           await tx.resource.create({
             data: {
@@ -219,7 +243,7 @@ export async function saveTables(_prev: SaveState, formData: FormData): Promise<
               locationId: location?.id ?? null,
               name: t.name,
               capacity: t.capacity,
-              kind: RESOURCE_KIND.TABLE,
+              kind: unit.kind,
             },
           });
         }
@@ -232,8 +256,10 @@ export async function saveTables(_prev: SaveState, formData: FormData): Promise<
       }
     });
 
-    const seats = parsed.data.reduce((s, t) => s + t.capacity, 0);
-    return { ok: true, message: `${ro(parsed.data.length, "masă", "mese")}, ${ro(seats, "loc", "locuri")}.` };
+    const count = ro(rows.length, unit.one, unit.many);
+    if (!usesPartySize) return { ok: true, message: `${count}.` };
+    const seats = rows.reduce((s, t) => s + t.capacity, 0);
+    return { ok: true, message: `${count}, ${ro(seats, "loc", "locuri")}.` };
   });
 }
 
@@ -243,7 +269,7 @@ const rulesSchema = z.object({
   gracePeriodMin: z.coerce.number().int().min(5, "Toleranța: minimum 5 minute.").max(60, "Toleranța: maximum 60 de minute."),
   noShowFeeLei: z.coerce.number().int().min(10, "Taxa: minimum 10 lei.").max(2000, "Taxa: maximum 2000 de lei."),
   cancellationWindowHours: z.coerce.number().int().min(0).max(168, "Anularea gratuită: maximum 7 zile."),
-  durationMin: z.coerce.number().int().min(30).max(360),
+  durationMin: z.coerce.number().int().min(15).max(480),
   regularsEnabled: z.string().optional(),
   regularsAfter: z.coerce.number().int().min(1).max(50),
 });
@@ -310,7 +336,7 @@ export async function setPublished(_prev: SaveState, formData: FormData): Promis
     await db.business.update({ where: { id: business.id }, data: { published: publish } });
     return {
       ok: true,
-      message: publish ? "Publicat — restaurantul apare acum în căutare." : "Retras din căutare. Linkul direct funcționează în continuare.",
+      message: publish ? "Publicat — afacerea apare acum în căutare." : "Retras din căutare. Linkul direct funcționează în continuare.",
     };
   });
 }

@@ -10,8 +10,8 @@ import { PRICE_LEVELS, describeDay, fold, openStatus } from "@/lib/business-prof
 import { db } from "@/lib/db";
 
 export const metadata: Metadata = {
-  title: "Caută un restaurant",
-  description: "Rezervă o masă fără cont și fără aplicație.",
+  title: "Caută unde rezervi",
+  description: "Rezervă la restaurante, saloane, clinici și alte afaceri — fără cont și fără aplicație.",
 };
 
 export const dynamic = "force-dynamic";
@@ -56,11 +56,11 @@ export default async function RestaurantsPage({ searchParams }: PageProps<"/rest
         <section className="relative overflow-hidden border-b-2 border-blue">
           <div aria-hidden="true" className="halftone-pink halftone-fade pointer-events-none absolute -right-20 top-0 h-80 w-[40rem] opacity-50" />
           <div className="relative mx-auto w-full max-w-6xl px-4 pb-12 pt-14 sm:px-6">
-            <p className={`${label} text-pink-deep`}>Restaurante</p>
+            <p className={`${label} text-pink-deep`}>Caută</p>
             <h1 className="mt-3 text-5xl font-bold leading-[0.9] tracking-[-0.055em] text-blue sm:text-7xl">
-              Unde mănânci{" "}
-              <span className="overprint" data-text="diseară?">
-                diseară?
+              Unde rezervi{" "}
+              <span className="overprint" data-text="azi?">
+                azi?
               </span>
             </h1>
             <p className="mt-4 max-w-xl text-lg text-ink">Rezervi fără cont. Nu plătești nimic ca să rezervi.</p>
@@ -78,7 +78,7 @@ export default async function RestaurantsPage({ searchParams }: PageProps<"/rest
                 <input
                   name="q"
                   defaultValue={q}
-                  placeholder="Nume, bucătărie, zonă…"
+                  placeholder="Nume, categorie, zonă…"
                   className="w-full bg-transparent py-3 text-lg text-ink outline-none placeholder:text-faint"
                 />
               </label>
@@ -124,8 +124,8 @@ export default async function RestaurantsPage({ searchParams }: PageProps<"/rest
         <section className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6">
           <p className={`${label} text-blue`}>
             {results.length === 0
-              ? "Niciun restaurant găsit"
-              : `${results.length} ${results.length === 1 ? "restaurant" : "restaurante"}${city ? ` în ${city}` : ""}`}
+              ? "Niciun loc găsit"
+              : `${results.length} ${results.length === 1 ? "loc" : "locuri"}${city ? ` în ${city}` : ""}`}
             {q || city ? (
               <>
                 {" · "}
@@ -183,7 +183,7 @@ export default async function RestaurantsPage({ searchParams }: PageProps<"/rest
           {results.length === 0 ? (
             <div className="mt-6 rounded-lg border-2 border-dashed border-blue p-12 text-center">
               <p className="text-3xl font-bold tracking-tight text-blue">Nimic aici încă.</p>
-              <p className="mt-2 text-ink">Încearcă alt nume sau alt oraș. Ai un restaurant?</p>
+              <p className="mt-2 text-ink">Încearcă alt nume sau alt oraș. Ai o afacere?</p>
               <Link href="/register" className={`${btn.primary} mt-6`}>
                 Înregistrează-l
               </Link>

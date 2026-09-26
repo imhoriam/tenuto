@@ -22,7 +22,7 @@ export async function sendBookingConfirmation(params: {
 
   const booking = await db.booking.findUnique({
     where: { id: params.bookingId },
-    include: { business: true, location: true, customer: true, policySnapshot: true },
+    include: { business: true, service: { select: { usesPartySize: true } }, location: true, customer: true, policySnapshot: true },
   });
   if (!booking?.accessToken) return null;
 
@@ -31,7 +31,7 @@ export async function sendBookingConfirmation(params: {
   const body = confirmationSms({
     businessName: booking.business.name,
     when: `${shortDayIn(booking.startAt, tz)}, ${timeIn(booking.startAt, tz)}`,
-    partySize: booking.partySize,
+    partySize: booking.service.usesPartySize ? booking.partySize : null,
     address: loc?.address ? [loc.address, loc.city].filter(Boolean).join(", ") : null,
     gracePeriodMin: booking.policySnapshot?.gracePeriodMin ?? booking.business.gracePeriodMin,
     url: `${params.baseUrl.replace(/\/$/, "")}/r/${booking.accessToken}`,

@@ -6,8 +6,8 @@ import { btn } from "./ui";
 
 const NAV = [
   { href: "/#cum-functioneaza", label: "Cum funcționează" },
-  { href: "/#pentru-restaurante", label: "Restaurante" },
-  { href: "/restaurants", label: "Caută" },
+  { href: "/#pentru-afaceri", label: "Pentru afaceri" },
+  { href: "/restaurants", label: "Caută unde rezervi" },
   { href: "/legal", label: "Legal" },
 ];
 
@@ -44,7 +44,7 @@ export async function SiteHeader() {
                 Intră în cont
               </Link>
               <Link href="/register" className={btn.primary}>
-                Înregistrează restaurantul
+                Înregistrează-ți afacerea
               </Link>
             </>
           )}
@@ -79,7 +79,7 @@ export async function SiteHeader() {
               ) : (
                 <>
                   <Link href="/register" className={`${btn.primary} w-full`}>
-                    Înregistrează restaurantul
+                    Înregistrează-ți afacerea
                   </Link>
                   <Link href="/login" className={`${btn.ghost} w-full`}>
                     Intră în cont

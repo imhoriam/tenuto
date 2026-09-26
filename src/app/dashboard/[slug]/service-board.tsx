@@ -11,7 +11,7 @@ export interface Row {
   time: string;
   day: string;
   isToday: boolean;
-  partySize: number;
+  partySize: number | null;
   table: string;
   customerName: string;
   customerPhone: string;
@@ -212,11 +212,15 @@ export function ServiceBoard({
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-[17px] font-bold tracking-tight text-ink">{row.customerName}</p>
-                      <span className="text-sm text-faint">· {row.partySize} pers. · {row.table}</span>
+                      <span className="text-sm text-faint">{row.partySize !== null ? `· ${row.partySize} pers. ` : ""}· {row.table}</span>
                       <span className={`rounded border px-2 py-0.5 font-mono text-[11px] font-bold uppercase tracking-[0.08em] ${s.tone}`}>{s.label}</span>
                     </div>
                     <p className="mt-1 truncate text-xs text-muted">
                       <span className="font-mono">{row.reference}</span>
+                      {" · "}
+                      <a href={`tel:${row.customerPhone}`} className="font-mono text-ink underline-offset-2 hover:underline">
+                        {row.customerPhone}
+                      </a>
                       {row.requirement === REQUIREMENT.NONE ? " · client fidel, fără card" : ""}
                       {row.cardLast4 ? ` · card ••${row.cardLast4}` : ""}
                       {row.feeLabel ? ` · taxă ${row.feeLabel}` : ""}
@@ -281,7 +285,7 @@ export function ServiceBoard({
       </div>
       <p className="mt-3 text-xs text-muted">
         Clientul are un cod QR în SMS: scanează-l cu camera telefonului și confirmi sosirea dintr-o atingere. Se actualizează
-        singur. La finalul toleranței masa se eliberează și neprezentarea se înregistrează automat. Dacă
+        singur. La finalul toleranței locul se eliberează și neprezentarea se înregistrează automat. Dacă
         clientul ajunge totuși, apasă „A venit totuși” înainte să încasezi și nu se taxează nimic.
       </p>
     </section>

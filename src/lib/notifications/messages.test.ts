@@ -41,3 +41,17 @@ test("the confirmation carries where, when, the hold and the link — in two seg
   assert.equal(isGsm7(sms), true, "no diacritics may slip through");
   assert.ok(segments(sms) <= 2, `too long: ${segments(sms)} segments`);
 });
+
+test("without a party size the SMS drops 'pers.' and holds the place, not a table", () => {
+  const sms = confirmationSms({
+    businessName: "Detailing Nord",
+    when: "sâm. 3 oct., 10:00",
+    partySize: null,
+    address: null,
+    gracePeriodMin: 15,
+    url: "https://tenuto.ro/r/x",
+  });
+  assert.doesNotMatch(sms, /pers\./);
+  assert.doesNotMatch(sms, /Masa/);
+  assert.match(sms, /Locul e tinut 15 min/);
+});

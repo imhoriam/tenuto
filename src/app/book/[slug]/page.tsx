@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: PageProps<"/book/[slug]">): P
   const { slug } = await params;
   const business = await getBookingPageData(slug);
   return business
-    ? { title: `Rezervă la ${business.name}`, description: business.description ?? `Rezervă o masă la ${business.name}.` }
+    ? { title: `Rezervă la ${business.name}`, description: business.description ?? `Rezervă la ${business.name}.` }
     : {};
 }
 
@@ -70,6 +70,7 @@ export default async function BookPage({ params }: PageProps<"/book/[slug]">) {
                     name: service!.name,
                     description: service!.description,
                     durationMin: service!.durationMin,
+                    usesPartySize: service!.usesPartySize,
                   }}
                   businessName={business.name}
                   timezone={business.timezone}
