@@ -9,26 +9,26 @@ export function SiteFooter() {
       <div className="mx-auto grid w-full max-w-6xl gap-10 px-4 pb-10 pt-16 sm:px-6 md:grid-cols-[1.3fr_1fr_1fr_1fr]">
         <div>
           <p className="max-w-xs text-lg font-medium leading-snug">
-            Masa e ținută. Rezervarea e onorată. Nimeni nu plătește ca să rezerve.
+            Rezervări pentru orice afacere. Garanția e ținută, rezervarea e onorată, nimeni nu plătește ca să rezerve.
           </p>
           <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.18em] text-paper/60">
-            ten·u·to — ținut pe toată durata notei
+            ten·u·to — ținut, în caz că nu vii
           </p>
         </div>
         <FooterCol
           title="Clienți"
           links={[
-            { href: "/restaurants", label: "Caută un restaurant" },
+            { href: "/restaurants", label: "Caută unde rezervi" },
             { href: "/rezervare", label: "Rezervarea mea · contestă o taxă" },
             { href: "/legal/politica-neprezentare", label: "Taxa de neprezentare" },
           ]}
         />
         <FooterCol
-          title="Restaurante"
+          title="Afaceri"
           links={[
             { href: "/register", label: "Înregistrare" },
             { href: "/login", label: "Intră în cont" },
-            { href: "/#pentru-restaurante", label: "Ce primești" },
+            { href: "/#pentru-afaceri", label: "Ce primești" },
           ]}
         />
         <FooterCol

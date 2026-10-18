@@ -61,7 +61,8 @@ export interface ConfirmationSmsInput {
   businessName: string;
   /** Already formatted in the business's timezone, e.g. "sam. 3 oct, 20:00". */
   when: string;
-  partySize: number;
+  /** Null where party size means nothing (a haircut, a car wash). */
+  partySize: number | null;
   address: string | null;
   gracePeriodMin: number;
   url: string;
@@ -74,9 +75,9 @@ export interface ConfirmationSmsInput {
  */
 export function confirmationSms(i: ConfirmationSmsInput): string {
   const lines = [
-    `Rezervare confirmata: ${i.businessName}, ${i.when}, ${i.partySize} pers.`,
+    `Rezervare confirmata: ${i.businessName}, ${i.when}${i.partySize === null ? "" : `, ${i.partySize} pers.`}`,
     i.address ? `Adresa: ${i.address}.` : null,
-    `Masa e tinuta ${i.gracePeriodMin} min.`,
+    `${i.partySize === null ? "Locul e tinut" : "Masa e tinuta"} ${i.gracePeriodMin} min.`,
     `La sosire arata codul QR: ${i.url}`,
   ].filter(Boolean);
   return toGsm(lines.join("\n"));

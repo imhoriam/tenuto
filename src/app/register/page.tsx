@@ -6,7 +6,7 @@ import { AuthShell } from "@/components/auth-shell";
 import { getCurrentAccount } from "@/lib/auth/session";
 import { RegisterForm } from "./register-form";
 
-export const metadata: Metadata = { title: "Înregistrează restaurantul" };
+export const metadata: Metadata = { title: "Înregistrează-ți afacerea" };
 
 export default async function RegisterPage() {
   const account = await getCurrentAccount();
@@ -21,7 +21,7 @@ export default async function RegisterPage() {
           </p>
           <p className="mt-4 max-w-md text-paper/65">Fără să-ți sperii clienții fideli.</p>
           <ol className="mt-10 space-y-3 text-sm text-paper/80">
-            {["Contul restaurantului", "Profilul, ca pe Google", "Datele firmei", "Mese, toleranță, taxă — și primești linkul"].map(
+            {["Contul afacerii", "Profilul, ca pe Google", "Datele firmei", "Locuri, toleranță, taxă — și primești linkul"].map(
               (s, i) => (
                 <li key={s} className="flex items-center gap-3">
                   <span className="flex h-7 w-7 items-center justify-center rounded-full border border-paper/20 font-mono text-xs">
@@ -36,7 +36,7 @@ export default async function RegisterPage() {
       }
     >
       <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-pink-deep">Pasul 1 din 4</p>
-      <h1 className="mt-3 text-5xl font-bold leading-[0.95] tracking-[-0.05em] text-blue">Înregistrează-ți restaurantul</h1>
+      <h1 className="mt-3 text-5xl font-bold leading-[0.95] tracking-[-0.05em] text-blue">Înregistrează-ți afacerea</h1>
       <p className="mt-2 text-muted">Durează un minut. Profilul îl completezi imediat după.</p>
       <div className="mt-8">
         <RegisterForm />

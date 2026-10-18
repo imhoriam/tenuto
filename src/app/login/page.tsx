@@ -25,9 +25,9 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         </>
       }
     >
-      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-pink-deep">Pentru restaurante</p>
+      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-pink-deep">Pentru afaceri</p>
       <h1 className="mt-3 text-5xl font-bold leading-[0.95] tracking-[-0.05em] text-blue">Bine ai revenit</h1>
-      <p className="mt-2 text-muted">Intră cu numele de utilizator al restaurantului.</p>
+      <p className="mt-2 text-muted">Intră cu numele de utilizator al afacerii.</p>
       <div className="mt-8">
         <LoginForm next={typeof next === "string" ? next : undefined} />
       </div>
@@ -42,7 +42,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       <p className="mt-8 text-sm text-muted">
         Nu ai cont?{" "}
         <Link href="/register" className="font-semibold text-blue underline decoration-pink decoration-2 underline-offset-4">
-          Înregistrează restaurantul
+          Înregistrează-ți afacerea
         </Link>
       </p>
     </AuthShell>

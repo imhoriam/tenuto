@@ -27,7 +27,7 @@ export default async function ScanPage({ params }: PageProps<"/sosire/[token]">)
 
   const booking = await db.booking.findUnique({
     where: { accessToken: token },
-    include: { business: true, customer: true, resource: true, policySnapshot: true },
+    include: { business: true, customer: true, resource: true, service: { select: { usesPartySize: true } }, policySnapshot: true },
   });
   if (!booking) notFound();
 
@@ -90,10 +90,12 @@ export default async function ScanPage({ params }: PageProps<"/sosire/[token]">)
       </p>
       <h1 className="mt-2 text-5xl font-bold leading-[0.95] tracking-[-0.05em] text-blue">{booking.customer.name}</h1>
 
-      <div className="mt-6 grid grid-cols-3 overflow-hidden rounded-lg border-2 border-blue bg-sheet text-center">
+      <div
+        className={`mt-6 grid overflow-hidden rounded-lg border-2 border-blue bg-sheet text-center ${booking.service.usesPartySize ? "grid-cols-3" : "grid-cols-2"}`}
+      >
         <Fact k="Ora" v={timeIn(booking.startAt, tz)} />
-        <Fact k="Pers." v={String(booking.partySize)} mid />
-        <Fact k="Masa" v={booking.resource.name} />
+        {booking.service.usesPartySize ? <Fact k="Pers." v={String(booking.partySize)} mid /> : null}
+        <Fact k={booking.service.usesPartySize ? "Masa" : "Loc"} v={booking.resource.name} />
       </div>
       {booking.customerNote ? <p className="mt-4 text-sm italic text-ink">„{booking.customerNote}”</p> : null}
 

@@ -40,6 +40,7 @@ export default async function CustomerBookingPage({ params }: PageProps<"/r/[tok
     where: { accessToken: token },
     include: {
       business: true,
+      service: { select: { usesPartySize: true } },
       location: true,
       customer: true,
       mandate: true,
@@ -89,9 +90,8 @@ export default async function CustomerBookingPage({ params }: PageProps<"/r/[tok
         <p className={`${label} text-pink-deep`}>Rezervarea lui {booking.customer.name.split(" ")[0]}</p>
         <h1 className="mt-2 text-5xl font-bold leading-[0.95] tracking-[-0.05em] text-blue">{b.name}</h1>
         <p className="mt-3 text-lg text-ink">
-          <span className="capitalize">{dayIn(booking.startAt, tz)}</span> · <b>{timeIn(booking.startAt, tz)}</b> ·{" "}
-          {booking.partySize}{" "}
-          {booking.partySize === 1 ? "persoană" : "persoane"}
+          <span className="capitalize">{dayIn(booking.startAt, tz)}</span> · <b>{timeIn(booking.startAt, tz)}</b>
+          {booking.service.usesPartySize ? ` · ${booking.partySize} ${booking.partySize === 1 ? "persoană" : "persoane"}` : null}
         </p>
 
         <p className="mt-6 rounded-md border-2 border-blue bg-sheet px-4 py-3 font-semibold text-blue">

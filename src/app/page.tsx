@@ -14,7 +14,7 @@ export default function Home() {
         <Ticker />
         <Score />
         <ForClients />
-        <ForRestaurants />
+        <ForBusinesses />
         <Fairness />
         <Faq />
         <LegalShelf />
@@ -37,24 +37,25 @@ function Hero() {
         <div className="rise">
           <p className={`${label} inline-flex items-center gap-2 rounded-md border-2 border-blue bg-sheet px-2.5 py-1 text-blue`}>
             <span className="live-dot h-2 w-2 rounded-full bg-pink" />
-            Rezervări pentru restaurante · România
+            Rezervări pentru orice afacere · România
           </p>
           <h1 className="mt-7 text-[3.4rem] font-bold leading-[0.9] tracking-[-0.055em] text-blue sm:text-[5.6rem] lg:text-[6.4rem]">
-            Masa e{" "}
+            Garanția e{" "}
             <span className="overprint" data-text="ținută.">
               ținută.
             </span>
           </h1>
           <p className="mt-7 max-w-lg text-lg leading-relaxed text-ink">
-            Clientul rezervă în 30 de secunde, fără cont și fără aplicație. Nu plătește nimic ca să rezerve —
-            cardul e taxat doar dacă nu vine. Iar clienții fideli nu lasă card deloc.
+            Restaurante, saloane, clinici, service-uri auto, studiouri — oricine lucrează cu rezervări. Clientul
+            rezervă în 30 de secunde, fără cont și fără aplicație, și nu plătește nimic ca să rezerve: cardul e taxat
+            doar dacă nu vine. Iar clienții fideli nu lasă card deloc.
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-4">
             <Link href="/restaurants" className={`${btn.primary} px-6 py-3 text-base`}>
-              Caută un restaurant →
+              Caută unde rezervi →
             </Link>
             <Link href="/register" className={`${btn.ghost} px-6 py-3 text-base`}>
-              Am un restaurant
+              Am o afacere
             </Link>
           </div>
         </div>
@@ -119,7 +120,8 @@ function Ticker() {
     "0 lei la rezervare",
     "fără aplicație",
     "fără cont",
-    "masa ținută 15 minute",
+    "orice afacere cu rezervări",
+    "garanția ținută, nu banii",
     "clienții fideli fără card",
     "nimeni nu e taxat pe cuvânt",
     "7 zile ca să contești o taxă",
@@ -145,24 +147,25 @@ function Ticker() {
 
 function Score() {
   const bars = [
-    { t: "20:00", title: "Ora rezervării", body: "Masa e pregătită, pe numele tău." },
-    { t: "20:00 → 20:15", title: "Toleranța", body: "Singura întârziere, stabilită de restaurant și afișată înainte să rezervi. Masa e ținută — garantat." },
-    { t: "20:15", title: "Masa se eliberează", body: "N-ai ajuns? Masa trece la alți clienți, iar restaurantul poate încasa suma pe care ai acceptat-o — o singură dată." },
-    { t: "7 zile", title: "Poți contesta", body: "Banii stau blocați 7 zile. Contești cu un tap și nu ajung la restaurant până nu se rezolvă." },
+    { t: "20:00", title: "Ora rezervării", body: "Locul e pregătit, pe numele tău: masa, scaunul, boxa sau ora de consultație." },
+    { t: "20:00 → 20:15", title: "Toleranța", body: "Singura întârziere, stabilită de afacere și afișată înainte să rezervi. Locul e ținut — garantat." },
+    { t: "20:15", title: "Locul se eliberează", body: "N-ai ajuns? Locul trece la alți clienți, iar afacerea poate încasa suma pe care ai acceptat-o — o singură dată." },
+    { t: "7 zile", title: "Banii sunt ținuți", body: "Taxa încasată stă ținută 7 zile. Contești cu un tap și nu ajunge la afacere până nu se rezolvă." },
   ];
   return (
     <section className="border-b-2 border-blue">
       <div className="mx-auto w-full max-w-6xl px-4 py-24 sm:px-6">
         <div className="grid gap-6 lg:grid-cols-[1fr_1fr] lg:items-end">
           <div>
-            <p className={`${label} text-pink-deep`}>Partitura unei seri</p>
+            <p className={`${label} text-pink-deep`}>De unde vine numele</p>
             <h2 className="mt-3 text-4xl font-bold leading-[0.95] tracking-[-0.045em] text-blue sm:text-6xl">
-              Tenuto: nota ținută pe toată durata ei.
+              Tenuto: ținut, în caz că nu vii.
             </h2>
           </div>
           <p className="max-w-md text-lg leading-relaxed text-ink lg:justify-self-end">
-            În muzică, liniuța de deasupra unei note înseamnă „ține-o întreagă”. La noi, e masa ta — ținută exact cât a
-            promis restaurantul, nici mai mult, nici mai puțin. Iată cum curge o rezervare de la 20:00.
+            În muzică, tenuto înseamnă „ține nota”. La noi se ține garanția: cardul rămâne pus deoparte cât timp
+            există riscul unei neprezentări, fără să se blocheze vreun ban. Dacă nu vii, taxa se încasează și banii
+            sunt ținuți încă 7 zile înainte să ajungă la afacere. Iată cum curge o rezervare de la 20:00.
           </p>
         </div>
 
@@ -251,7 +254,7 @@ function Staff() {
 
 function ForClients() {
   const steps = [
-    { n: "1", title: "Alegi", body: "Caută după nume sau oraș, ori deschide linkul primit de la restaurant." },
+    { n: "1", title: "Alegi", body: "Caută după nume sau oraș, ori deschide linkul primit de la afacere." },
     { n: "2", title: "Rezervi", body: "Câte persoane, ce zi, ce oră, pe ce nume. Vezi doar orele cu adevărat libere." },
     { n: "3", title: "Citești", body: "Dacă se cere card, cât și când — înainte să confirmi. Nu se reține nimic." },
     { n: "4", title: "Ajungi", body: "Primești un SMS cu adresa și un cod QR. La intrare îl scanează personalul — sau îți spui numele." },
@@ -277,9 +280,9 @@ function ForClients() {
         </ol>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          <Persona tag="Client fidel" tone="bg-emerald-500" quote="Ești client cunoscut — nu cerem card. Masa e ținută 15 minute." />
+          <Persona tag="Client fidel" tone="bg-emerald-500" quote="Ești client cunoscut — nu cerem card. Locul e ținut 15 minute." />
           <Persona tag="Client nou" tone="bg-blue" quote="Nu se reține nimic acum. Dacă nu ajungi sau anulezi târziu: 50 lei." />
-          <Persona tag="A mai lipsit" tone="bg-pink" quote="Restaurantul poate cere o garanție mai mare. O vezi înainte să confirmi." />
+          <Persona tag="A mai lipsit" tone="bg-pink" quote="Afacerea poate cere o garanție mai mare. O vezi înainte să confirmi." />
         </div>
       </div>
     </section>
@@ -299,24 +302,25 @@ function Persona({ tag, tone, quote }: { tag: string; tone: string; quote: strin
 }
 
 // ---------------------------------------------------------------------------
-// Restaurants
+// Businesses
 // ---------------------------------------------------------------------------
 
-function ForRestaurants() {
+function ForBusinesses() {
+  const verticals = ["Restaurante", "Saloane și frizerii", "Clinici și cabinete", "Detailing și service auto", "Studiouri de tatuaj", "Săli și terenuri"];
   const menu = [
     ["Regulile tale, per client", "Fideli fără card, noi cu garanție, cei care au lipsit cu avans. Prima regulă potrivită câștigă."],
-    ["Link și cod QR de rezervare", "Pe Instagram, pe Google, pe meniu. Clienții rezervă direct la tine."],
+    ["Link și cod QR de rezervare", "Pe Instagram, pe Google, pe vitrină. Clienții rezervă direct la tine."],
     ["Sosiri dintr-o scanare", "Clientul arată codul QR din SMS; îl scanezi cu camera și confirmi. Sau cauți „pe ce nume?”."],
-    ["Masa nu stă goală", "La finalul toleranței, masa se eliberează pentru alți clienți, iar neprezentarea se marchează singură."],
-    ["Încasare cu un buton", "Doar neprezentările de după toleranță, o singură dată fiecare. Banii ajung la tine după 7 zile."],
+    ["Locul nu stă gol", "La finalul toleranței, masa, scaunul sau ora se eliberează pentru alți clienți, iar neprezentarea se marchează singură."],
+    ["Încasare cu un buton", "Doar neprezentările de după toleranță, o singură dată fiecare. Banii sunt ținuți 7 zile, apoi ajung la tine."],
     ["Bani recuperați, la vedere", "Cât ai recuperat și din câte neprezentări. Cifra care își plătește abonamentul."],
   ];
   return (
-    <section id="pentru-restaurante" className="scroll-mt-20 border-b-2 border-blue">
+    <section id="pentru-afaceri" className="scroll-mt-20 border-b-2 border-blue">
       <div className="mx-auto w-full max-w-6xl px-4 py-24 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div className="max-w-2xl">
-            <p className={`${label} text-pink-deep`}>Pentru restaurante</p>
+            <p className={`${label} text-pink-deep`}>Pentru afaceri</p>
             <h2 className="mt-3 text-4xl font-bold leading-[0.95] tracking-[-0.045em] text-blue sm:text-6xl">
               Te protejezi de cei 10% care nu vin.{" "}
               <span className="overprint" data-text="Fără">
@@ -324,6 +328,16 @@ function ForRestaurants() {
               </span>{" "}
               să-ți sperii fidelii.
             </h2>
+            <p className="mt-5 text-lg leading-relaxed text-ink">
+              Pentru orice afacere care ține un loc pentru cineva și pierde bani când nu vine.
+            </p>
+            <ul className="mt-4 flex flex-wrap gap-2">
+              {verticals.map((v) => (
+                <li key={v} className="rounded-md border-2 border-blue bg-sheet px-2.5 py-1 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-blue">
+                  {v}
+                </li>
+              ))}
+            </ul>
           </div>
           <Link href="/register" className={`${btn.primary} px-6 py-3 text-base`}>
             Începe gratuit →
@@ -336,7 +350,7 @@ function ForRestaurants() {
           {/* The feature list, set like the menu it serves. */}
           <div className="rounded-lg border-2 border-blue bg-sheet p-6 sm:p-8">
             <div className="flex items-baseline justify-between border-b-2 border-blue pb-3">
-              <p className="text-2xl font-bold tracking-tight text-blue">Meniul casei</p>
+              <p className="text-2xl font-bold tracking-tight text-blue">Ce primești</p>
               <p className={`${label} text-muted`}>toate incluse</p>
             </div>
             <ul className="mt-2">
@@ -418,9 +432,9 @@ function HostStand() {
 
 function Fairness() {
   const rules = [
-    ["Să te taxeze pe cuvânt.", "Neprezentarea o înregistrează sistemul, la minut, la finalul toleranței — nu restaurantul."],
+    ["Să te taxeze pe cuvânt.", "Neprezentarea o înregistrează sistemul, la minut, la finalul toleranței — nu afacerea."],
     ["Să te marcheze absent mai devreme.", "Toleranța e impusă de cod. Nu e o promisiune, e o regulă."],
-    ["Să păstreze banii pe care îi contești.", "Taxa stă blocată 7 zile. Contești cu un tap, iar restaurantul nu o primește până nu decide Tenuto."],
+    ["Să păstreze banii pe care îi contești.", "Taxa stă ținută 7 zile. Contești cu un tap, iar afacerea nu o primește până nu decide Tenuto."],
     ["Să schimbe ce ai acceptat.", "Textul exact pe care l-ai văzut e salvat și nu mai poate fi atins de nimeni."],
   ];
   return (
@@ -428,7 +442,7 @@ function Fairness() {
       <div className="mx-auto w-full max-w-6xl px-4 py-24 sm:px-6">
         <p className={`${label} text-pink-soft`}>Corect pentru ambele părți</p>
         <h2 className="mt-3 max-w-3xl text-4xl font-bold leading-[0.95] tracking-[-0.045em] sm:text-6xl">
-          Ce nu poate face un restaurant. Niciodată.
+          Ce nu poate face o afacere. Niciodată.
         </h2>
         <ul className="mt-14 grid gap-4 sm:grid-cols-2">
           {rules.map(([t, d], i) => (
@@ -451,11 +465,12 @@ function Fairness() {
 
 function Faq() {
   const qa = [
-    ["Plătesc ceva ca să rezerv?", "Nu. Niciodată. Dacă restaurantul cere un card, acesta e doar salvat ca garanție — nu se blochează nicio sumă."],
-    ["Ce se întâmplă dacă întârzii?", "Masa e ținută pe durata toleranței afișate la rezervare. După aceea poate fi dată altor clienți — dacă știi că întârzii, sună restaurantul."],
-    ["Cum anulez?", "Anularea în termenul afișat la rezervare e gratuită — anunță restaurantul. O anulare e mereu mai bună decât o neprezentare: masa ajunge la altcineva."],
-    ["Cine vede datele mele de card?", "Nici restaurantul, nici Tenuto. Cardul e procesat de furnizorul de plăți; noi păstrăm doar tipul și ultimele patru cifre."],
-    ["Pot contesta o taxă?", "Da, cu un tap, din pagina rezervării tale. Banii stau blocați 7 zile și nu ajung la restaurant până nu se rezolvă: restaurantul poate rambursa, altfel verifică Tenuto."],
+    ["Pentru ce fel de afaceri e Tenuto?", "Pentru orice afacere care lucrează cu rezervări: restaurante, saloane, clinici, service-uri auto, studiouri, săli. Oriunde un loc ținut degeaba înseamnă bani pierduți."],
+    ["Plătesc ceva ca să rezerv?", "Nu. Niciodată. Dacă afacerea cere un card, acesta e doar salvat ca garanție — nu se blochează nicio sumă."],
+    ["Ce se întâmplă dacă întârzii?", "Locul e ținut pe durata toleranței afișate la rezervare. După aceea poate fi dat altor clienți — dacă știi că întârzii, anunță-i telefonic."],
+    ["Cum anulez?", "Anularea în termenul afișat la rezervare e gratuită — anunță-i telefonic. O anulare e mereu mai bună decât o neprezentare: locul ajunge la altcineva."],
+    ["Cine vede datele mele de card?", "Nici afacerea, nici Tenuto. Cardul e procesat de furnizorul de plăți; noi păstrăm doar tipul și ultimele patru cifre."],
+    ["Pot contesta o taxă?", "Da, cu un tap, din pagina rezervării tale. Banii stau ținuți 7 zile și nu ajung la afacere până nu se rezolvă: afacerea poate rambursa, altfel verifică Tenuto."],
     ["Trebuie să instalez o aplicație?", "Nu. Rezervi din browserul telefonului și primești un SMS cu linkul rezervării și codul QR pentru sosire."],
   ];
   return (
@@ -485,7 +500,7 @@ function Faq() {
 
 function LegalShelf() {
   const docs = [
-    { href: "/legal/termeni", title: "Termeni și condiții", body: "Client, restaurant, Tenuto." },
+    { href: "/legal/termeni", title: "Termeni și condiții", body: "Client, afacere, Tenuto." },
     { href: "/legal/politica-neprezentare", title: "Neprezentare", body: "Când și cum se poate percepe o taxă." },
     { href: "/legal/confidentialitate", title: "Confidențialitate", body: "Ce date folosim și de ce." },
     { href: "/legal/cookies", title: "Cookie-uri", body: "Doar unul, strict necesar." },
@@ -523,17 +538,17 @@ function FinalCta() {
       <div aria-hidden="true" className="halftone-blue pointer-events-none absolute -bottom-10 -left-10 h-72 w-[40rem] opacity-25 [mask-image:linear-gradient(20deg,#000,transparent_70%)]" />
       <div className="relative mx-auto flex w-full max-w-6xl flex-col items-start gap-8 px-4 py-24 sm:px-6 lg:flex-row lg:items-end lg:justify-between">
         <h2 className="max-w-3xl text-5xl font-bold leading-[0.9] tracking-[-0.055em] text-ink sm:text-7xl">
-          Nicio masă goală cu „rezervat” pe ea.
+          Niciun loc gol cu „rezervat” pe el.
         </h2>
         <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center">
           <Link
             href="/register"
             className="press inline-flex items-center justify-center whitespace-nowrap rounded-md border-2 border-blue bg-sheet px-6 py-3.5 text-base font-bold text-blue"
           >
-            Înregistrează-ți restaurantul →
+            Înregistrează-ți afacerea →
           </Link>
           <Link href="/restaurants" className="inline-flex items-center justify-center px-2 py-3.5 font-semibold text-ink underline decoration-blue decoration-2 underline-offset-4">
-            sau caută unde să mănânci
+            sau caută unde rezervi
           </Link>
         </div>
       </div>

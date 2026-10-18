@@ -53,13 +53,13 @@ export function BookingForm({
   maxCapacity,
 }: {
   slug: string;
-  service: { id: string; name: string; description: string | null; durationMin: number };
+  service: { id: string; name: string; description: string | null; durationMin: number; usesPartySize: boolean };
   businessName: string;
   timezone: string;
   today: string;
   maxCapacity: number;
 }) {
-  const [partySize, setPartySize] = useState(2);
+  const [partySize, setPartySize] = useState(service.usesPartySize ? 2 : 1);
   const [date, setDate] = useState(today);
   const [slots, setSlots] = useState<SlotOption[] | null>(null);
   const [slot, setSlot] = useState<SlotOption | null>(null);
@@ -140,7 +140,7 @@ export function BookingForm({
   }
 
   if (confirmation) {
-    return <Pass confirmation={confirmation} timezone={timezone} businessName={businessName} />;
+    return <Pass confirmation={confirmation} timezone={timezone} businessName={businessName} showParty={service.usesPartySize} />;
   }
 
   const needsCard = policy && policy.requirement !== REQUIREMENT.NONE;
@@ -148,7 +148,8 @@ export function BookingForm({
 
   return (
     <div className="space-y-10">
-      <Step n={1} title="Câte persoane și ce zi?">
+      <Step n={1} title={service.usesPartySize ? "Câte persoane și ce zi?" : "Ce zi?"}>
+        {service.usesPartySize ? (
         <div className="flex flex-wrap gap-2">
           {PARTY_SIZES.filter((n) => n <= Math.max(maxCapacity, 2)).map((n) => (
             <button
@@ -169,8 +170,9 @@ export function BookingForm({
             </button>
           ))}
         </div>
+        ) : null}
 
-        <div className="-mx-1 mt-5 flex gap-2 overflow-x-auto px-1 pb-1">
+        <div className={`-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 ${service.usesPartySize ? "mt-5" : ""}`}>
           {days.map((d) => {
             const c = dayChip(d, today);
             const active = d === date;
@@ -224,7 +226,10 @@ export function BookingForm({
             <p className="text-sm text-muted">Se caută…</p>
           ) : slots.length === 0 ? (
             <p className="rounded-md border-2 border-dashed border-blue/40 px-4 py-4 text-sm text-ink">
-              Nu sunt mese libere pentru {partySize} {partySize === 1 ? "persoană" : "persoane"} în ziua aleasă. Încearcă altă zi.
+              {service.usesPartySize
+                ? `Nu sunt mese libere pentru ${partySize} ${partySize === 1 ? "persoană" : "persoane"} în ziua aleasă.`
+                : "Nu mai sunt ore libere în ziua aleasă."}{" "}
+              Încearcă altă zi.
             </p>
           ) : (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
@@ -249,7 +254,7 @@ export function BookingForm({
             </div>
           )}
           <p className="mt-3 text-xs text-muted">
-            {service.name} · {service.durationMin % 60 === 0 ? `${service.durationMin / 60} h` : `${service.durationMin} min`} la masă
+            {service.name} · {service.durationMin % 60 === 0 ? `${service.durationMin / 60} h` : `${service.durationMin} min`}{service.usesPartySize ? " la masă" : ""}
           </p>
         </Step>
       ) : null}
@@ -283,7 +288,7 @@ export function BookingForm({
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Observații (opțional) — ex. „masă la geam”"
+              placeholder={service.usesPartySize ? "Observații (opțional) — ex. „masă la geam”" : "Observații (opțional)"}
               className={`${field.input} sm:col-span-2`}
             />
           </div>
@@ -364,7 +369,17 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
-function Pass({ confirmation, timezone, businessName }: { confirmation: Confirmation; timezone: string; businessName: string }) {
+function Pass({
+  confirmation,
+  timezone,
+  businessName,
+  showParty,
+}: {
+  confirmation: Confirmation;
+  timezone: string;
+  businessName: string;
+  showParty: boolean;
+}) {
   const start = new Date(confirmation.startAt);
   const day = new Intl.DateTimeFormat("ro-RO", { timeZone: timezone, weekday: "long", day: "numeric", month: "long" }).format(start);
   const time = new Intl.DateTimeFormat("ro-RO", { timeZone: timezone, hour: "2-digit", minute: "2-digit" }).format(start);
@@ -393,11 +408,13 @@ function Pass({ confirmation, timezone, businessName }: { confirmation: Confirma
               {day} · <b>{time}</b>
             </p>
           </div>
-          <div className="grid grid-cols-2 border-y-2 border-dashed border-blue/40">
-            <div className="border-r-2 border-dashed border-blue/40 px-6 py-4">
-              <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Persoane</p>
-              <p className="mt-0.5 text-2xl font-bold text-blue">{confirmation.partySize}</p>
-            </div>
+          <div className={`grid border-y-2 border-dashed border-blue/40 ${showParty ? "grid-cols-2" : ""}`}>
+            {showParty ? (
+              <div className="border-r-2 border-dashed border-blue/40 px-6 py-4">
+                <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Persoane</p>
+                <p className="mt-0.5 text-2xl font-bold text-blue">{confirmation.partySize}</p>
+              </div>
+            ) : null}
             <div className="px-6 py-4">
               <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Plătit acum</p>
               <p className="mt-0.5 text-2xl font-bold text-blue">0 lei</p>
@@ -433,7 +450,7 @@ function Pass({ confirmation, timezone, businessName }: { confirmation: Confirma
         </div>
       </div>
       <p className="mt-4 text-sm leading-relaxed text-muted">
-        Nu mai poți ajunge? Anunță restaurantul din timp — anularea în termenul afișat e gratuită, iar masa ajunge la altcineva.
+        Nu mai poți ajunge? Anunță-i din timp — anularea în termenul afișat e gratuită, iar locul ajunge la altcineva.
       </p>
     </div>
   );

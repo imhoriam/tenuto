@@ -4,9 +4,15 @@
 
 **Reservations that are actually kept.**
 
-The name is the musical instruction meaning *held*: a note sustained for its
-full value. The table is held for exactly as long as the restaurant promised,
-and the booking is honoured in full.
+The name is the musical instruction meaning *held*. What Tenuto holds is the
+**guarantee against a no-show**: the customer's card is kept on file (no money
+blocked) for as long as a no-show is possible, and if a fee is collected the
+money is held another `DISPUTE_WINDOW_DAYS` before it reaches the business.
+Copy must not claim money is held at booking time — it isn't (§8).
+
+Positioning: Tenuto is for **any business that takes reservations**
+(restaurants, salons, clinics, detailers, studios), not just restaurants. See §12
+for how far the product actually supports that today.
 
 ---
 
@@ -164,7 +170,8 @@ other restaurants' bookings, and shows a customer who scans their own code a
 - **The restaurant can refund. It cannot uphold.** Only Tenuto (the platform)
   can rule that a fee stands, from `/admin`, with the full audit trail in front
   of it. The ruling and its note appear on the customer's page.
-- Restaurants with an abnormal dispute rate are flagged and can be suspended.
+- Restaurants with an abnormal dispute rate (3+ disputes and ≥20% of collected
+  fees, `src/app/admin/page.tsx`) are flagged and can be suspended.
 
 ### 3.7 What the customer never experiences
 
@@ -200,14 +207,24 @@ These are the defaults every new restaurant gets on registration. The pitch:
 
 ### 5.1 Getting started
 
-1. `/register` — restaurant name, username, password. Creates the business,
-   a location, a default 2h table service and the default policy rules.
+1. `/register` — business name, username, password. Creates the business,
+   a location, a default 2h table service and the default policy rules — a
+   restaurant's defaults until a category says otherwise.
 2. `/dashboard/<slug>/settings` — the profile, **field for field like a Google
    Business Profile** (category, description, phone, website, address, price
    range, opening hours with split shifts and past-midnight closes), the
    **company's legal data** (legal name, CUI with check-digit validation, trade
-   register number, registered office, VAT payer), tables, and rules (grace
-   period, fee, free-cancellation window, table duration, regulars rule).
+   register number, registered office, VAT payer), the bookable resources, and
+   rules (grace period, fee, free-cancellation window, booking duration,
+   regulars rule).
+   - **Category** is a grouped list (`VERTICALS` in `business-profile.ts`:
+     restaurants, beauty, health, auto, studios, sport, professional services)
+     plus "Altă categorie — o scriu eu", which takes free text and makes the
+     business `other`.
+   - Saving the category sets `Service.usesPartySize` and `Resource.kind` for
+     the whole business. Only restaurants get tables with seat counts and a
+     party-size step; everyone else gets named, capacity-1 resources
+     (posturi, boxe, specialiști, terenuri…) and no "pers." anywhere.
 3. **Publish** — only allowed once the profile can actually take a booking
    (`missingForPublish`). Any later save that makes it incomplete unpublishes it.
 4. `/dashboard/<slug>/share` — booking link, a QR of it (PNG/SVG), an embed
@@ -217,6 +234,8 @@ These are the defaults every new restaurant gets on registration. The pitch:
 
 Built for someone at a host stand with one hand free. Refreshes every 15s.
 
+- **Every booking shows the customer's phone** as a `tel:` link, so the host
+  can call a late table in one tap.
 - **Search "on what name?"** — name, phone or code; accent-insensitive.
 - **A sosit** — record an arrival. **A venit totuși** — the same, after the
   no-show was recorded. Both can only ever *prevent* a charge.
@@ -333,7 +352,11 @@ npm run typecheck        # next typegen && tsc --noEmit
 npm run lint
 npm run build
 
+npm run typegen          # next typegen only (PageProps / LayoutProps)
+
 npm run db:migrate       # prisma migrate dev — interactive only, see §10
+npm run db:generate      # prisma generate
+npm run db:reset         # prisma migrate reset --force (wipes dev.db)
 npm run db:seed          # reset + reseed the demo data
 npm run db:studio
 npm run smoke            # sanity check against seeded data
@@ -421,15 +444,17 @@ src/lib/booking/
 src/app/                        (Romanian UI throughout)
   page.tsx                      landing
   restaurants/                  public search
-  legal/                        terms, no-show policy, privacy, cookies
+  legal/                        terms, no-show policy, privacy, cookies (text in content.ts)
   register/ login/ auth-actions registration and login
   book/[slug]/                  public booking flow
   r/[token]/                    customer booking page: QR, details, dispute
   rezervare/                    find a booking by code + phone
   sosire/[token]/               what staff open when they scan the QR
+  dashboard/                    index redirects to the logged-in restaurant or /login
   dashboard/[slug]/             service board, settings/, share/
   admin/                        disputes and suspensions (platform)
-src/components/                 logo, header, footer, ui class strings, covers
+src/components/                 logo, header, footer, auth shell, copy button,
+                                ui class strings, venue covers
 scripts/smoke.ts                sanity check against seeded data
 scripts/integration.mts         full money path against a real database
 scripts/money-path.mts          narrated walk-through of one booking
@@ -462,8 +487,13 @@ SQLite. **On Postgres replace it** with an exclusion constraint over
 | `Service` | 2h dinner seating | 6h ceramic coating | 45min appointment | 3h session |
 | `partySize` | covers | unused | unused | unused |
 
-`Service.usesPartySize` is the switch. **Do not add restaurant-only columns.**
-The UI, settings and copy are restaurant-specific today; the model is not.
+`Service.usesPartySize` is the switch, derived from the category via
+`verticalOf()`. **Do not add restaurant-only columns.** The site speaks to any
+*afacere* (the word chosen over "firmă", which is kept only for the legal
+entity: "Datele firmei", CUI). Settings, booking page, dashboard, scan page,
+customer page and SMS all follow the vertical. Still restaurant-shaped: the
+default policy rule "large parties leave a card" (harmless — party size is 1
+elsewhere), one service per business, and the search route `/restaurants`.
 
 ---
 

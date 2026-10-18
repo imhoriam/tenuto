@@ -7,10 +7,16 @@ import { DISPUTE_WINDOW_DAYS } from "@/lib/constants";
 import {
   CATEGORIES,
   COUNTIES,
+  CUSTOM_CATEGORY,
+  CUSTOM_CATEGORY_MAX,
   DESCRIPTION_MAX,
   PRICE_LEVELS,
+  VERTICALS,
   WEEK,
+  defaultResourceName,
   isValidCui,
+  verticalOf,
+  type VerticalKey,
   type Interval,
   type WeekHours,
 } from "@/lib/business-profile";
@@ -46,20 +52,22 @@ type Props = {
   policy: { id: string; name: string; priority: number; enabled: boolean; outcome: string }[];
 };
 
-const SECTIONS = [
-  { id: "profil", label: "Profil" },
-  { id: "program", label: "Program" },
-  { id: "firma", label: "Datele firmei" },
-  { id: "mese", label: "Mese" },
-  { id: "reguli", label: "Reguli" },
-];
+const capitalise = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
 
 export function SettingsForms(props: Props) {
+  const vertical = verticalOf(props.profile.category);
+  const sections = [
+    { id: "profil", label: "Profil" },
+    { id: "program", label: "Program" },
+    { id: "firma", label: "Datele firmei" },
+    { id: "resurse", label: capitalise(VERTICALS[vertical].unit.many) },
+    { id: "reguli", label: "Reguli" },
+  ];
   return (
     <div className="grid gap-8 lg:grid-cols-[13rem_1fr]">
       <aside className="min-w-0 lg:sticky lg:top-36 lg:self-start">
         <nav className="flex gap-1 overflow-x-auto pb-1 lg:flex-col">
-          {SECTIONS.map((s) => (
+          {sections.map((s) => (
             <a key={s.id} href={`#${s.id}`} className="shrink-0 rounded-md px-3 py-2 font-mono text-xs font-semibold uppercase tracking-[0.14em] text-blue transition hover:bg-blue hover:text-paper">
               {s.label}
             </a>
@@ -72,8 +80,8 @@ export function SettingsForms(props: Props) {
         <ProfileForm slug={props.slug} profile={props.profile} />
         <HoursForm slug={props.slug} initial={props.hours} />
         <CompanyForm slug={props.slug} company={props.company} />
-        <TablesForm slug={props.slug} initial={props.tables} />
-        <RulesForm slug={props.slug} rules={props.rules} policy={props.policy} />
+        <ResourcesForm key={vertical} slug={props.slug} vertical={vertical} initial={props.tables} />
+        <RulesForm slug={props.slug} vertical={vertical} rules={props.rules} policy={props.policy} />
       </div>
     </div>
   );
@@ -159,14 +167,14 @@ function PublishCard({ slug, published, missing }: { slug: string; published: bo
           ))}
         </ul>
       ) : (
-        <p className="mt-2 text-xs text-muted">{published ? "Clienții te găsesc pe pagina Restaurante." : "Totul e completat."}</p>
+        <p className="mt-2 text-xs text-muted">{published ? "Clienții te găsesc în căutare." : "Totul e completat."}</p>
       )}
       <button
         type="submit"
         disabled={pending || (!published && missing.length > 0)}
         className={`${published ? btn.small : btn.accent} mt-4 w-full ${published ? "" : "py-2.5"}`}
       >
-        {pending ? "…" : published ? "Retrage din căutare" : "Publică restaurantul"}
+        {pending ? "…" : published ? "Retrage din căutare" : "Publică afacerea"}
       </button>
       {state?.error ? (
         <p role="alert" className="mt-2 text-xs text-red-700">
@@ -187,6 +195,9 @@ function PublishCard({ slug, published, missing }: { slug: string; published: bo
 function ProfileForm({ slug, profile }: { slug: string; profile: Props["profile"] }) {
   const [state, action, pending] = useActionState(saveProfile, undefined);
   const [description, setDescription] = useState(profile.description);
+  const typed = profile.category !== "" && !CATEGORIES.includes(profile.category);
+  const [category, setCategory] = useState(typed ? CUSTOM_CATEGORY : profile.category);
+  const [custom, setCustom] = useState(typed ? profile.category : "");
 
   return (
     <Panel id="profil" title="Profil public" lead="Aceleași câmpuri ca pe Google Business Profile — le poți copia unul câte unul.">
@@ -196,17 +207,43 @@ function ProfileForm({ slug, profile }: { slug: string; profile: Props["profile"
           <Field label="Numele afacerii" className="sm:col-span-2">
             <input name="name" defaultValue={profile.name} required className={field.input} />
           </Field>
-          <Field label="Categoria principală">
-            <select name="category" defaultValue={profile.category} required className={field.input}>
+          <Field
+            label="Categoria principală"
+            hint={category === "" ? "Nu găsești ce faci? Alege „Altă categorie” la finalul listei." : undefined}
+          >
+            <select name="category" value={category} onChange={(e) => setCategory(e.target.value)} required className={field.input}>
               <option value="" disabled>
                 Alege…
               </option>
-              {CATEGORIES.map((c) => (
-                <option key={c}>{c}</option>
-              ))}
+              {Object.entries(VERTICALS)
+                .filter(([, v]) => v.categories.length > 0)
+                .map(([key, v]) => (
+                  <optgroup key={key} label={v.label}>
+                    {v.categories.map((c) => (
+                      <option key={c}>{c}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              <optgroup label="Nu e în listă">
+                <option value={CUSTOM_CATEGORY}>Altă categorie — o scriu eu</option>
+              </optgroup>
             </select>
           </Field>
-          <Field label="Interval de preț" hint="Per persoană.">
+          {category === CUSTOM_CATEGORY ? (
+            <Field label="Categoria ta" hint="Cum o caută clienții, ex. „Școală de înot”.">
+              <input
+                name="customCategory"
+                value={custom}
+                onChange={(e) => setCustom(e.target.value)}
+                required
+                minLength={3}
+                maxLength={CUSTOM_CATEGORY_MAX}
+                autoFocus
+                className={field.input}
+              />
+            </Field>
+          ) : null}
+          <Field label="Interval de preț" hint={verticalOf(category === CUSTOM_CATEGORY ? custom : category) === "restaurant" ? "Per persoană." : "Pentru un serviciu obișnuit."}>
             <select name="priceLevel" defaultValue={profile.priceLevel} className={field.input}>
               <option value="">Nespecificat</option>
               {PRICE_LEVELS.map((p) => (
@@ -238,7 +275,7 @@ function ProfileForm({ slug, profile }: { slug: string; profile: Props["profile"
             <input name="phone" defaultValue={profile.phone} inputMode="tel" required placeholder="+40 721 000 000" className={field.input} />
           </Field>
           <Field label="Site web">
-            <input name="website" defaultValue={profile.website} inputMode="url" placeholder="www.restaurant.ro" className={field.input} />
+            <input name="website" defaultValue={profile.website} inputMode="url" placeholder="www.afacerea-ta.ro" className={field.input} />
           </Field>
           <Field label="E-mail pentru rezervări">
             <input name="email" type="email" defaultValue={profile.email} className={field.input} />
@@ -432,59 +469,66 @@ function CompanyForm({ slug, company }: { slug: string; company: Props["company"
 
 // ---------------------------------------------------------------------------
 
-function TablesForm({ slug, initial }: { slug: string; initial: Props["tables"] }) {
+function ResourcesForm({ slug, vertical, initial }: { slug: string; vertical: VerticalKey; initial: Props["tables"] }) {
   const [state, action, pending] = useActionState(saveTables, undefined);
-  const [tables, setTables] = useState(initial);
-  const seats = tables.reduce((s, t) => s + (Number(t.capacity) || 0), 0);
+  const [rows, setRows] = useState(initial);
+  const { unit, usesPartySize } = VERTICALS[vertical];
+  const seats = rows.reduce((s, t) => s + (Number(t.capacity) || 0), 0);
 
   const nextName = () => {
-    const used = new Set(tables.map((t) => t.name.toLowerCase()));
-    let n = tables.length + 1;
-    while (used.has(`m${n}`)) n += 1;
-    return `M${n}`;
+    const used = new Set(rows.map((t) => t.name.toLowerCase()));
+    let n = rows.length + 1;
+    while (used.has(defaultResourceName(vertical, n).toLowerCase())) n += 1;
+    return defaultResourceName(vertical, n);
   };
 
+  const lead = usesPartySize
+    ? "Fiecare masă cu numărul de locuri. Clienții văd doar orele în care încape grupul lor."
+    : `Câte rezervări poți primi în același timp: câte ${unit.many} ai. Fiecare primește un client pe rând.`;
+
   return (
-    <Panel id="mese" title="Mese" lead="Fiecare masă cu numărul de locuri. Clienții văd doar orele în care încape grupul lor.">
+    <Panel id="resurse" title={capitalise(unit.many)} lead={lead}>
       <form action={action}>
         <input type="hidden" name="slug" value={slug} />
-        <input type="hidden" name="tables" value={JSON.stringify(tables)} />
-        {tables.length === 0 ? (
+        <input type="hidden" name="tables" value={JSON.stringify(rows)} />
+        {rows.length === 0 ? (
           <p className="rounded-md border border-dashed border-blue/25 p-6 text-center text-sm text-muted">
-            Nicio masă încă. Adaugă-le mai jos.
+            Nimic adăugat încă. Adaugă mai jos.
           </p>
         ) : (
           <ul className="grid gap-2 sm:grid-cols-2">
-            {tables.map((t, i) => (
+            {rows.map((t, i) => (
               <li key={t.id ?? `new-${i}`} className="flex items-center gap-2 rounded-md border-2 border-blue/25 p-2 pl-3">
                 <input
                   value={t.name}
-                  onChange={(e) => setTables(tables.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+                  onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
                   className="w-full min-w-0 bg-transparent font-medium outline-none"
-                  aria-label="Numele mesei"
+                  aria-label="Nume"
                 />
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setTables(tables.map((x, j) => (j === i ? { ...x, capacity: Math.max(1, x.capacity - 1) } : x)))}
-                    className="h-8 w-8 rounded-full border-2 border-blue/25 text-muted hover:text-ink"
-                    aria-label="Mai puține locuri"
-                  >
-                    −
-                  </button>
-                  <span className="w-14 text-center text-sm tabular-nums">{t.capacity} loc.</span>
-                  <button
-                    type="button"
-                    onClick={() => setTables(tables.map((x, j) => (j === i ? { ...x, capacity: Math.min(30, x.capacity + 1) } : x)))}
-                    className="h-8 w-8 rounded-full border-2 border-blue/25 text-muted hover:text-ink"
-                    aria-label="Mai multe locuri"
-                  >
-                    +
-                  </button>
-                </div>
+                {usesPartySize ? (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setRows(rows.map((x, j) => (j === i ? { ...x, capacity: Math.max(1, x.capacity - 1) } : x)))}
+                      className="h-8 w-8 rounded-full border-2 border-blue/25 text-muted hover:text-ink"
+                      aria-label="Mai puține locuri"
+                    >
+                      −
+                    </button>
+                    <span className="w-14 text-center text-sm tabular-nums">{t.capacity} loc.</span>
+                    <button
+                      type="button"
+                      onClick={() => setRows(rows.map((x, j) => (j === i ? { ...x, capacity: Math.min(30, x.capacity + 1) } : x)))}
+                      className="h-8 w-8 rounded-full border-2 border-blue/25 text-muted hover:text-ink"
+                      aria-label="Mai multe locuri"
+                    >
+                      +
+                    </button>
+                  </div>
+                ) : null}
                 <button
                   type="button"
-                  onClick={() => setTables(tables.filter((_, j) => j !== i))}
+                  onClick={() => setRows(rows.filter((_, j) => j !== i))}
                   className="h-8 w-8 rounded-full text-muted hover:bg-red-50 hover:text-red-700"
                   aria-label={`Șterge ${t.name}`}
                 >
@@ -495,18 +539,20 @@ function TablesForm({ slug, initial }: { slug: string; initial: Props["tables"] 
           </ul>
         )}
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          {[2, 4, 6].map((cap) => (
-            <button
-              key={cap}
-              type="button"
-              onClick={() => setTables([...tables, { name: nextName(), capacity: cap }])}
-              className={btn.small}
-            >
-              + Masă de {cap}
+          {usesPartySize ? (
+            [2, 4, 6].map((cap) => (
+              <button key={cap} type="button" onClick={() => setRows([...rows, { name: nextName(), capacity: cap }])} className={btn.small}>
+                + Masă de {cap}
+              </button>
+            ))
+          ) : (
+            <button type="button" onClick={() => setRows([...rows, { name: nextName(), capacity: 1 }])} className={btn.small}>
+              + Adaugă {unit.article} {unit.one}
             </button>
-          ))}
+          )}
           <span className="ml-auto text-sm text-muted">
-            {tables.length} mese · {seats} locuri
+            {rows.length} {rows.length === 1 ? unit.one : unit.many}
+            {usesPartySize ? ` · ${seats} locuri` : ""}
           </span>
         </div>
         <SaveBar state={state} pending={pending} />
@@ -517,8 +563,21 @@ function TablesForm({ slug, initial }: { slug: string; initial: Props["tables"] 
 
 // ---------------------------------------------------------------------------
 
-function RulesForm({ slug, rules, policy }: { slug: string; rules: Props["rules"]; policy: Props["policy"] }) {
+function RulesForm({
+  slug,
+  vertical,
+  rules,
+  policy,
+}: {
+  slug: string;
+  vertical: VerticalKey;
+  rules: Props["rules"];
+  policy: Props["policy"];
+}) {
   const [state, action, pending] = useActionState(saveRules, undefined);
+  const restaurant = vertical === "restaurant";
+  const place = restaurant ? "masa" : "locul";
+  const durations = [...new Set([...(restaurant ? [60, 90, 120, 150, 180, 240] : [15, 30, 45, 60, 90, 120, 180, 240, 360, 480]), rules.durationMin])].sort((a, b) => a - b);
   const [grace, setGrace] = useState(rules.gracePeriodMin);
   const [fee, setFee] = useState(rules.noShowFeeLei);
 
@@ -532,20 +591,20 @@ function RulesForm({ slug, rules, policy }: { slug: string; rules: Props["rules"
       <form action={action}>
         <input type="hidden" name="slug" value={slug} />
         <div className="grid gap-5 sm:grid-cols-2">
-          <Field label="Perioadă de toleranță (minute)" hint="Singura întârziere acceptată. După ea, masa se eliberează pentru alți clienți și neprezentarea se înregistrează automat.">
+          <Field label="Perioadă de toleranță (minute)" hint={`Singura întârziere acceptată. După ea, ${place} se eliberează pentru alți clienți și neprezentarea se înregistrează automat.`}>
             <input name="gracePeriodMin" type="number" min={5} max={60} value={grace} onChange={(e) => setGrace(Number(e.target.value))} className={field.input} />
           </Field>
-          <Field label="Taxă de neprezentare (lei)" hint="Implicită. Grupurile mari și cei care au mai lipsit au reguli separate, mai jos.">
+          <Field label="Taxă de neprezentare (lei)" hint={restaurant ? "Implicită. Grupurile mari și cei care au mai lipsit au reguli separate, mai jos." : "Implicită. Cei care au mai lipsit au o regulă separată, mai jos."}>
             <input name="noShowFeeLei" type="number" min={10} max={2000} value={fee} onChange={(e) => setFee(Number(e.target.value))} className={field.input} />
           </Field>
           <Field label="Anulare gratuită până la (ore înainte)">
             <input name="cancellationWindowHours" type="number" min={0} max={168} defaultValue={rules.cancellationWindowHours} className={field.input} />
           </Field>
-          <Field label="Durata unei mese (minute)">
+          <Field label={restaurant ? "Durata unei mese" : "Durata unei rezervări"}>
             <select name="durationMin" defaultValue={rules.durationMin} className={field.input}>
-              {[60, 90, 120, 150, 180, 240].map((m) => (
+              {durations.map((m) => (
                 <option key={m} value={m}>
-                  {m >= 60 ? `${m / 60} h`.replace(".5 h", " h 30") : `${m} min`}
+                  {m < 60 ? `${m} min` : m % 60 === 0 ? `${m / 60} h` : `${Math.floor(m / 60)} h ${m % 60}`}
                 </option>
               ))}
             </select>
@@ -566,7 +625,7 @@ function RulesForm({ slug, rules, policy }: { slug: string; rules: Props["rules"
         <div className="mt-6 rounded-md border-2 border-blue/25 p-4 text-sm">
           <p className="font-medium">Cum arată pentru o rezervare la 20:00</p>
           <p className="mt-2 text-muted">
-            Masa e ținută până la <b className="text-ink">{at(grace)}</b>. Dacă sosirea nu e confirmată până atunci, masa se
+            {restaurant ? "Masa e ținută" : "Locul e ținut"} până la <b className="text-ink">{at(grace)}</b>. Dacă sosirea nu e confirmată până atunci, {place} se
             eliberează pentru alți clienți, se înregistrează neprezentarea și poți încasa <b className="text-ink">{fee} lei</b>. Banii
             ajung la tine după {DISPUTE_WINDOW_DAYS} zile, dacă clientul nu contestă.
           </p>
