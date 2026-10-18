@@ -44,18 +44,18 @@ const TRANSITIONS: Record<BookingStatus, readonly BookingStatus[]> = {
     BOOKING_STATUS.WAIVED,
   ],
   [BOOKING_STATUS.CHARGE_FAILED]: [
-    // Retry ladder: +24h, +72h, then give up.
+    // Retry ladder: +24h, +72h, then give up. Nothing was taken, so there is
+    // nothing to dispute.
     BOOKING_STATUS.CHARGE_SUCCEEDED,
     BOOKING_STATUS.WAIVED,
-    BOOKING_STATUS.DISPUTED,
   ],
   [BOOKING_STATUS.CHARGE_SUCCEEDED]: [
     BOOKING_STATUS.DISPUTED,
     BOOKING_STATUS.WAIVED, // refunded after the fact
   ],
   [BOOKING_STATUS.DISPUTED]: [
-    BOOKING_STATUS.WAIVED,
-    BOOKING_STATUS.CHARGE_SUCCEEDED,
+    BOOKING_STATUS.WAIVED, // refunded
+    BOOKING_STATUS.CHARGE_SUCCEEDED, // upheld by the platform
   ],
   // Terminal.
   [BOOKING_STATUS.COMPLETED]: [],
@@ -113,8 +113,26 @@ export function assertActorMayTransition(
   }
   if (actor === ACTOR.BUSINESS && to === BOOKING_STATUS.CHARGE_SUCCEEDED) {
     // A business asserting "they were charged" is not a thing. Only the
-    // payment provider's result may produce this.
+    // payment provider's result — or the platform upholding a dispute — may
+    // produce this.
     throw new ForbiddenActorError(actor, to);
+  }
+  if (to === BOOKING_STATUS.DISPUTED && actor !== ACTOR.CUSTOMER) {
+    // Disputing is the customer's guarantee; nobody opens one on their behalf.
+    throw new ForbiddenActorError(actor, to);
+  }
+}
+
+/**
+ * A dispute can be settled two ways. Refunding is open to the business (it can
+ * always give the money back) and the platform. Upholding — the fee stands —
+ * is the platform's alone: a business ruling on disputes against itself is
+ * exactly the conflict the dispute exists to remove.
+ */
+export function assertActorMayResolveDispute(actor: Actor, outcome: "refund" | "uphold"): void {
+  const allowed = outcome === "refund" ? [ACTOR.BUSINESS, ACTOR.PLATFORM] : [ACTOR.PLATFORM];
+  if (!(allowed as readonly Actor[]).includes(actor)) {
+    throw new ForbiddenActorError(actor, outcome === "refund" ? BOOKING_STATUS.WAIVED : BOOKING_STATUS.CHARGE_SUCCEEDED);
   }
 }
 

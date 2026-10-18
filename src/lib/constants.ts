@@ -91,11 +91,12 @@ export const CHARGE_STATUS = {
 } as const;
 export type ChargeStatus = (typeof CHARGE_STATUS)[keyof typeof CHARGE_STATUS];
 
+/**
+ * How an arrival was recorded. Staff confirm arrivals by name at the host
+ * stand; there is no customer-side check-in. Older rows may still hold "qr"
+ * or "link" from before that was removed.
+ */
 export const CHECKIN_METHOD = {
-  /** Customer scanned the printed code at the venue. Strongest evidence. */
-  QR: "qr",
-  /** Customer tapped the link in their reminder, location-validated. */
-  LINK: "link",
   /** Staff vouched for them. May only prevent a charge, never cause one. */
   MANUAL: "manual",
 } as const;
@@ -106,6 +107,8 @@ export const ACTOR = {
   CUSTOMER: "customer",
   BUSINESS: "business",
   SYSTEM: "system",
+  /** Tenuto staff resolving a dispute. The only actor that can uphold one. */
+  PLATFORM: "platform",
 } as const;
 export type Actor = (typeof ACTOR)[keyof typeof ACTOR];
 
@@ -117,6 +120,30 @@ export const CHANNEL = {
   EMAIL: "email",
 } as const;
 export type Channel = (typeof CHANNEL)[keyof typeof CHANNEL];
+
+/**
+ * Where collected money sits. It is held before it reaches the business so a
+ * customer can dispute it first; a dispute freezes it until resolved.
+ */
+export const PAYOUT_STATUS = {
+  HELD: "held",
+  FROZEN: "frozen",
+  RELEASED: "released",
+  REFUNDED: "refunded",
+} as const;
+export type PayoutStatus = (typeof PAYOUT_STATUS)[keyof typeof PAYOUT_STATUS];
+
+/** How long a collected fee is held, and so how long a customer has to dispute it. */
+export const DISPUTE_WINDOW_DAYS = 7;
+
+export const DISPUTE_STATUS = {
+  OPEN: "open",
+  /** Money returned to the customer — by the business or the platform. */
+  REFUNDED: "refunded",
+  /** The platform reviewed it and the fee stands. */
+  UPHELD: "upheld",
+} as const;
+export type DisputeStatus = (typeof DISPUTE_STATUS)[keyof typeof DISPUTE_STATUS];
 
 /** Statuses from which no further money movement is possible. */
 export const MONEY_SAFE_STATUSES: readonly BookingStatus[] = [

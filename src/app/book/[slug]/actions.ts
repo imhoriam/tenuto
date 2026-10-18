@@ -8,6 +8,8 @@ import { REQUIREMENT } from "@/lib/constants";
 import { pickResource } from "@/lib/booking/availability";
 import { BookingError, createBooking } from "@/lib/booking/service";
 import { findSlots, resolvePolicyFor } from "@/lib/booking/slots";
+import { sendBookingConfirmation } from "@/lib/notifications/deliver";
+import { publicBaseUrl } from "@/lib/origin";
 
 /** Local YYYY-MM-DD -> the instant window covering that day in `timezone`. */
 function dayWindow(isoDate: string, timezone: string) {
@@ -203,13 +205,22 @@ export async function submitBooking(input: z.input<typeof createSchema>) {
       userAgent: head.get("user-agent") ?? undefined,
     });
 
+    const baseUrl = await publicBaseUrl();
+    const sms = await sendBookingConfirmation({ bookingId: booking.id, baseUrl });
+
     return {
       ok: true as const,
+      smsSent: sms?.status === "sent",
       reference: booking.reference,
       requirement: policy.requirement,
       feeCents: policy.feeCents,
       cardLast4: card?.cardLast4 ?? null,
       startAt: booking.startAt.toISOString(),
+      partySize: booking.partySize,
+      customerName: parsed.data.name,
+      // The customer's own page: details, what they accepted, and the
+      // one-tap dispute if a fee is ever collected.
+      bookingUrl: `${baseUrl}/r/${booking.accessToken}`,
     };
   } catch (err) {
     if (err instanceof BookingError) {

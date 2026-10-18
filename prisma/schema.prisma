@@ -32,6 +32,24 @@ model Business {
   email String?
   phone String?
 
+  // Public profile, modelled on the fields of a Google Business Profile so an
+  // operator can copy theirs across field by field.
+  category    String? // primary category, e.g. "Restaurant românesc"
+  description String? // up to 750 characters, as on Google
+  website     String?
+  priceLevel  Int? // 1-4, price per person; see PRICE_LEVELS
+
+  // Legal entity behind the venue. Needed on every receipt for a collected
+  // no-show fee, and by the payment provider when onboarding payouts.
+  legalName         String?
+  taxId             String? // CUI / CIF, without the RO prefix
+  vatPayer          Boolean @default(false)
+  tradeRegisterNo   String? // Nr. Reg. Com., e.g. J40/1234/2020
+  registeredAddress String?
+
+  /// Listed in public search only once the profile is complete enough to book.
+  published Boolean @default(false)
+
   // Payments. Null until the business completes Connect onboarding.
   stripeAccountId    String?
   payoutsEnabled     Boolean @default(false)
@@ -46,9 +64,14 @@ model Business {
   // booking becomes markable as a no-show and the slot is released.
   gracePeriodMin Int @default(15)
 
+  /// Set by the platform when a business is suspended (e.g. an abnormal
+  /// dispute rate). A suspended business takes no bookings and collects no fees.
+  suspendedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  account       Account?
   locations     Location[]
   resources     Resource[]
   services      Service[]
@@ -61,19 +84,45 @@ model Business {
   @@index([slug])
 }
 
+/// A restaurant's login. One account per business for now; staff seats can
+/// hang off Business later without changing this.
+model Account {
+  id           String   @id @default(cuid())
+  loginName    String   @unique // lowercased
+  passwordHash String // scrypt; see src/lib/auth/password.ts
+  businessId   String   @unique
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime  @default(now())
+  lastLoginAt DateTime?
+
+  sessions Session[]
+}
+
+/// Server-side session. The cookie carries a random token; only its SHA-256
+/// is stored, so a leaked database does not hand out live sessions.
+model Session {
+  id        String   @id // sha256(token), hex
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([accountId])
+}
+
 model Location {
   id         String   @id @default(cuid())
   businessId String
   business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
-  name    String
-  address String?
-  lat     Float?
-  lng     Float?
-
-  // Rotating secret behind the printed QR code. Signing check-in links with
-  // this stops a customer from checking in from home.
-  checkInSecret String @default(cuid())
+  name       String
+  address    String? // street and number
+  city       String?
+  county     String?
+  postalCode String?
+  lat        Float?
+  lng        Float?
 
   resources Resource[]
   bookings  Booking[]
@@ -185,9 +234,9 @@ model Customer {
 
   stripeCustomerId String?
 
-  completedCount   Int @default(0)
-  noShowCount      Int @default(0)
-  lateCancelCount  Int @default(0)
+  completedCount  Int @default(0)
+  noShowCount     Int @default(0)
+  lateCancelCount Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -233,14 +282,14 @@ model PolicyRule {
   enabled  Boolean @default(true)
 
   // Conditions — all non-null ones must hold for the rule to match.
-  minCompletedHere   Int? // customer has >= N completed bookings here
-  hasNoShowHistory   Boolean? // true: only customers with a prior no-show
-  minPartySize       Int?
+  minCompletedHere     Int? // customer has >= N completed bookings here
+  hasNoShowHistory     Boolean? // true: only customers with a prior no-show
+  minPartySize         Int?
   minServicePriceCents Int?
-  appliesOnWeekend   Boolean?
+  appliesOnWeekend     Boolean?
 
   // Outcome
-  requirement    String // See REQUIREMENT — none | card_on_file | deposit
+  requirement      String // See REQUIREMENT — none | card_on_file | deposit
   feeCentsOverride Int?
 
   @@index([businessId, enabled, priority])
@@ -254,16 +303,21 @@ model Booking {
   id        String @id @default(cuid())
   reference String @unique // short human code, e.g. TNT-4F7K2
 
+  /// Secret behind the customer's own booking page (/r/<accessToken>), where
+  /// they see what they agreed to and can dispute a fee. Random, never derived
+  /// from the id or the reference.
+  accessToken String? @unique
+
   businessId String
-  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
   serviceId  String
-  service    Service  @relation(fields: [serviceId], references: [id])
+  service    Service   @relation(fields: [serviceId], references: [id])
   resourceId String
-  resource   Resource @relation(fields: [resourceId], references: [id])
+  resource   Resource  @relation(fields: [resourceId], references: [id])
   locationId String?
   location   Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
   customerId String
-  customer   Customer @relation(fields: [customerId], references: [id])
+  customer   Customer  @relation(fields: [customerId], references: [id])
 
   // startAt/endAt are the *occupied* window, buffers included.
   startAt   DateTime
@@ -296,6 +350,7 @@ model Booking {
   charges        Charge[]
   checkIns       CheckIn[]
   events         BookingEvent[]
+  dispute        Dispute?
   notifications  Notification[]
 
   @@index([businessId, startAt])
@@ -334,17 +389,17 @@ model Mandate {
   customerId String
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
-  provider          String @default("mock") // mock | stripe
+  provider            String  @default("mock") // mock | stripe
   providerCustomerRef String?
-  paymentMethodRef  String?
-  setupIntentRef    String?
+  paymentMethodRef    String?
+  setupIntentRef      String?
 
-  status         String  @default("pending") // See MANDATE_STATUS
-  cardBrand      String?
-  cardLast4      String?
-  cardExpMonth   Int?
-  cardExpYear    Int?
-  threeDSPassed  Boolean @default(false)
+  status        String  @default("pending") // See MANDATE_STATUS
+  cardBrand     String?
+  cardLast4     String?
+  cardExpMonth  Int?
+  cardExpYear   Int?
+  threeDSPassed Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -374,6 +429,13 @@ model Charge {
   createdAt   DateTime  @default(now())
   succeededAt DateTime?
 
+  /// Collected money is held before it reaches the business, so a customer can
+  /// dispute it first. See PAYOUT_STATUS and DISPUTE_WINDOW_DAYS.
+  payoutStatus    String    @default("held")
+  payoutReleaseAt DateTime?
+  refundedAt      DateTime?
+  refundRef       String?
+
   @@index([bookingId])
   @@index([status, nextRetryAt])
 }
@@ -383,10 +445,8 @@ model CheckIn {
   bookingId String
   booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
-  method String // See CHECKIN_METHOD — qr | link | manual
+  method String // See CHECKIN_METHOD — manual (older rows: qr | link)
   at     DateTime @default(now())
-  lat    Float?
-  lng    Float?
 
   /// Set when a staff member checked the customer in. A manual override may
   /// only ever prevent a charge, never cause one.
@@ -431,4 +491,22 @@ model Notification {
 
   @@index([bookingId])
   @@index([status])
+}
+
+/// A customer contesting a collected fee. While open, the money is frozen:
+/// the business can refund it, but only the platform can rule in its favour.
+model Dispute {
+  id        String  @id @default(cuid())
+  bookingId String  @unique
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  reason String? // the customer's words, verbatim
+  status String  @default("open") // See DISPUTE_STATUS
+
+  openedAt   DateTime  @default(now())
+  resolvedAt DateTime?
+  resolvedBy String? // "business" | "platform"
+  resolution String? // the reviewer's note
+
+  @@index([status, openedAt])
 }

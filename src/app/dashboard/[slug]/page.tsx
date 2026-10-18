@@ -1,172 +1,252 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
 
+import { btn } from "@/components/ui";
+import { CopyButton } from "@/components/copy-button";
 import { db } from "@/lib/db";
 import {
   BOOKING_STATUS,
   CHARGE_STATUS,
-  REQUIREMENT,
+  DISPUTE_WINDOW_DAYS,
+  PAYOUT_STATUS,
   type BookingStatus,
 } from "@/lib/constants";
-import { canMarkNoShow } from "@/lib/booking/state-machine";
+import { requireBusiness } from "@/lib/auth/session";
+import { missingForPublish } from "@/lib/business-profile";
+import { releaseDuePayouts, sweepNoShows } from "@/lib/booking/service";
 import { dayIn, money, timeIn } from "@/lib/format";
-import { ServiceBoard } from "./service-board";
+import { requestOrigin } from "@/lib/origin";
+import { LiveRefresh } from "./live-refresh";
+import { ServiceBoard, type Row } from "./service-board";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
+const COLLECTABLE: BookingStatus[] = [
+  BOOKING_STATUS.NO_SHOW_PENDING,
+  BOOKING_STATUS.CANCELLED_LATE,
+  BOOKING_STATUS.CHARGE_FAILED,
+];
 
-  const business = await db.business.findUnique({ where: { slug } });
-  if (!business) notFound();
+function untilLabel(target: Date, now: Date): string {
+  const min = Math.max(0, Math.ceil((target.getTime() - now.getTime()) / 60_000));
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
+export default async function DashboardPage({ params }: PageProps<"/dashboard/[slug]">) {
+  const { slug } = await params;
+  const business = await requireBusiness(slug);
+
+  // No worker yet: a grace period that ran out while nobody was looking is
+  // recorded the moment someone looks.
+  await sweepNoShows({ businessId: business.id });
+  await releaseDuePayouts({ businessId: business.id });
 
   const now = new Date();
   const windowStart = new Date(now.getTime() - 12 * 60 * 60 * 1000);
   const windowEnd = new Date(now.getTime() + 36 * 60 * 60 * 1000);
 
-  const bookings = await db.booking.findMany({
-    where: {
-      businessId: business.id,
-      startAt: { gte: windowStart, lte: windowEnd },
-    },
-    include: {
-      customer: true,
-      resource: true,
-      mandate: true,
-      charges: true,
-    },
-    orderBy: { startAt: "asc" },
-  });
-
-  // Money recovered, all time — the number that justifies the invoice.
-  const recovered = await db.charge.aggregate({
-    where: {
-      status: CHARGE_STATUS.SUCCEEDED,
-      booking: { businessId: business.id },
-    },
-    _sum: { amountCents: true },
-    _count: true,
-  });
-
-  const protectedCount = bookings.filter(
-    (b) => b.requirement !== REQUIREMENT.NONE,
-  ).length;
-
-  const rows = bookings.map((b) => {
-    const check = canMarkNoShow(
-      {
-        status: b.status as BookingStatus,
-        startAt: b.startAt,
-        gracePeriodMin: business.gracePeriodMin,
-        checkedInAt: b.checkedInAt,
+  const [bookings, paidOut, onHold, collectable, readiness] = await Promise.all([
+    db.booking.findMany({
+      where: {
+        businessId: business.id,
+        OR: [
+          { startAt: { gte: windowStart, lte: windowEnd } },
+          // A dispute usually lands days later; it stays on the board until settled.
+          { status: BOOKING_STATUS.DISPUTED },
+        ],
       },
-      now,
-    );
+      include: {
+        customer: true,
+        resource: true,
+        service: { select: { usesPartySize: true } },
+        mandate: true,
+        charges: { orderBy: { attempt: "asc" } },
+        policySnapshot: true,
+        dispute: true,
+      },
+      orderBy: { startAt: "asc" },
+    }),
+    db.charge.aggregate({
+      where: { status: CHARGE_STATUS.SUCCEEDED, payoutStatus: PAYOUT_STATUS.RELEASED, booking: { businessId: business.id } },
+      _sum: { amountCents: true },
+      _count: true,
+    }),
+    db.charge.aggregate({
+      where: {
+        status: CHARGE_STATUS.SUCCEEDED,
+        payoutStatus: { in: [PAYOUT_STATUS.HELD, PAYOUT_STATUS.FROZEN] },
+        booking: { businessId: business.id },
+      },
+      _sum: { amountCents: true },
+      _count: true,
+    }),
+    // Everything that is, or will become, collectable — not just tonight's.
+    db.booking.findMany({
+      where: {
+        businessId: business.id,
+        status: { in: COLLECTABLE },
+        chargeableAt: { not: null },
+        feeCents: { gt: 0 },
+        mandate: { isNot: null },
+      },
+      select: { chargeableAt: true, feeCents: true },
+    }),
+    db.business.findUniqueOrThrow({
+      where: { id: business.id },
+      include: {
+        locations: { take: 1 },
+        _count: { select: { resources: { where: { active: true } }, scheduleRules: true } },
+      },
+    }),
+  ]);
+
+  const due = collectable.filter((b) => b.chargeableAt! <= now);
+  const disputes = bookings.filter((b) => b.status === BOOKING_STATUS.DISPUTED);
+
+  const missing = missingForPublish({
+    ...readiness,
+    address: readiness.locations[0]?.address ?? null,
+    city: readiness.locations[0]?.city ?? null,
+    activeTables: readiness._count.resources,
+    scheduleRules: readiness._count.scheduleRules,
+  });
+
+  const rows: Row[] = bookings.map((b) => {
+    const grace = b.policySnapshot?.gracePeriodMin ?? business.gracePeriodMin;
+    const graceEnd = new Date(b.startAt.getTime() + grace * 60_000);
+    const status = b.status as BookingStatus;
+    const lastCharge = b.charges.at(-1);
+
+    let hint: string | null = null;
+    if (status === BOOKING_STATUS.CONFIRMED && now < graceEnd && now >= b.startAt) {
+      hint = `Toleranță: încă ${untilLabel(graceEnd, now)}`;
+    } else if (status === BOOKING_STATUS.NO_SHOW_PENDING) {
+      hint = "Locul s-a eliberat · taxa se poate încasa. A venit totuși? Marchează-l sosit.";
+    } else if (status === BOOKING_STATUS.DISPUTED) {
+      hint = `Clientul contestă${b.dispute?.reason ? `: „${b.dispute.reason}”` : ""} · banii sunt blocați până la rezolvare`;
+    } else if (status === BOOKING_STATUS.CHARGE_SUCCEEDED) {
+      const held = lastCharge?.payoutStatus === PAYOUT_STATUS.HELD && lastCharge.payoutReleaseAt;
+      hint = held ? `În așteptare — ajunge la tine pe ${dayIn(lastCharge.payoutReleaseAt!, business.timezone)}` : null;
+    } else if (status === BOOKING_STATUS.CHARGE_FAILED && b.chargeableAt) {
+      hint = `Reîncercare ${b.chargeableAt > now ? `în ${untilLabel(b.chargeableAt, now)}` : "scadentă"}`;
+    }
 
     return {
       id: b.id,
       reference: b.reference,
       time: timeIn(b.startAt, business.timezone),
       day: dayIn(b.startAt, business.timezone),
-      startAtIso: b.startAt.toISOString(),
-      partySize: b.partySize,
+      isToday: dayIn(b.startAt, business.timezone) === dayIn(now, business.timezone),
+      partySize: b.service.usesPartySize ? b.partySize : null,
       table: b.resource.name,
       customerName: b.customer.name,
       customerPhone: b.customer.phone,
       note: b.customerNote,
-      status: b.status as BookingStatus,
+      status,
       requirement: b.requirement,
       feeLabel: b.feeCents > 0 ? money(b.feeCents, business.currency) : null,
       cardLast4: b.mandate?.cardLast4 ?? null,
-      canMarkAbsent: check.ok,
-      blockedReason: check.ok ? null : check.reason,
-      chargeStatus: b.charges.at(-1)?.status ?? null,
-      chargeError: b.charges.at(-1)?.lastError ?? null,
-      isActive: !([
-        BOOKING_STATUS.CANCELLED_FREE,
-        BOOKING_STATUS.EXPIRED,
-      ] as string[]).includes(b.status),
+      hint,
+      arrivedAt: b.checkedInAt ? timeIn(b.checkedInAt, business.timezone) : null,
+      chargeError: lastCharge?.lastError ?? null,
     };
   });
 
-  const todayLabel = dayIn(now, business.timezone);
+  const dueTotal = due.reduce((s, b) => s + b.feeCents, 0);
+  const arrived = bookings.filter((b) => b.status === BOOKING_STATUS.CHECKED_IN).length;
+  const expectedToday = rows.filter((r) => r.isToday && r.status !== BOOKING_STATUS.CANCELLED_FREE).length;
+  const bookingUrl = `${await requestOrigin()}/book/${business.slug}`;
 
   return (
-    <main className="min-h-dvh bg-stone-100 text-stone-900">
-      <div className="mx-auto w-full max-w-5xl px-4 py-8">
-        <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+      <LiveRefresh />
+
+      {business.suspendedAt ? (
+        <div className="mb-8 rounded-lg border-2 border-red-700 bg-red-50 p-5">
+          <p className="font-bold text-red-900">Contul este suspendat de Tenuto.</p>
+          <p className="mt-1 text-sm text-red-900">
+            Nu primești rezervări noi și nu poți încasa taxe până la reactivare. Scrie-ne la contact@tenuto.ro.
+          </p>
+        </div>
+      ) : null}
+
+      {disputes.length > 0 ? (
+        <div className="mb-8 rounded-lg border-2 border-blue bg-blue-soft p-5">
+          <p className="font-bold text-blue">
+            {disputes.length === 1 ? "O contestație deschisă" : `${disputes.length} contestații deschise`}
+          </p>
+          <p className="mt-1 text-sm text-ink">
+            Banii rămân blocați până la rezolvare. Poți rambursa oricând; dacă nu, Tenuto verifică istoricul rezervării și
+            decide.
+          </p>
+        </div>
+      ) : null}
+
+      {!business.published && !business.suspendedAt ? (
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border-2 border-blue bg-pink-soft p-5">
           <div>
-            <p className="text-xs font-medium uppercase tracking-[0.2em] text-stone-400">
-              Tenuto
+            <p className="font-bold text-blue">Restaurantul nu apare încă în căutare.</p>
+            <p className="mt-1 text-sm text-ink">
+              {missing.length > 0 ? `Mai lipsesc: ${missing.join(", ")}.` : "Profilul e complet — îl poți publica din Setări."}
             </p>
-            <h1 className="mt-1 font-serif text-3xl text-stone-900">
-              {business.name}
-            </h1>
-            <p className="mt-1 text-sm capitalize text-stone-500">{todayLabel}</p>
-            <Link
-              href={`/dashboard/${business.slug}/qr`}
-              className="mt-2 inline-block text-sm text-stone-500 underline underline-offset-4 transition hover:text-stone-900"
-            >
-              Cod QR pentru intrare →
-            </Link>
           </div>
+          <Link href={`/dashboard/${business.slug}/settings`} className={btn.primary}>
+            Completează profilul
+          </Link>
+        </div>
+      ) : null}
 
-          <div className="flex gap-3">
-            <Stat
-              label="Recuperat"
-              value={money(recovered._sum.amountCents ?? 0, business.currency)}
-              sub={`${recovered._count} ${recovered._count === 1 ? "absență" : "absențe"}`}
-              accent
-            />
-            <Stat
-              label="Protejate"
-              value={`${protectedCount}/${bookings.length}`}
-              sub="cu card"
-            />
-            <Stat
-              label="Toleranță"
-              value={`${business.gracePeriodMin} min`}
-              sub="masa e ținută"
-            />
-          </div>
-        </header>
-
-        <ServiceBoard slug={business.slug} rows={rows} />
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-pink-deep">{dayIn(now, business.timezone)}</p>
+          <h1 className="mt-1 text-5xl font-bold leading-none tracking-[-0.055em] text-blue sm:text-6xl">
+            Seara de{" "}
+            <span className="overprint" data-text="azi">
+              azi
+            </span>
+          </h1>
+        </div>
+        <div className="flex max-w-full items-center gap-2 rounded-md border-2 border-blue bg-sheet py-1 pl-3 pr-1 text-sm">
+          <span className="max-w-[14rem] truncate font-mono text-xs text-muted sm:max-w-xs">{bookingUrl}</span>
+          <CopyButton text={bookingUrl} label="Copiază linkul" />
+        </div>
       </div>
+
+      <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-lg border-2 border-blue bg-blue lg:grid-cols-4">
+        <Stat label="Sosiți" value={`${arrived}/${expectedToday}`} sub="rezervări azi" />
+        <Stat
+          label="Recuperat"
+          value={money(paidOut._sum.amountCents ?? 0, business.currency)}
+          sub={`plătit, din ${paidOut._count} ${paidOut._count === 1 ? "neprezentare" : "neprezentări"}`}
+          tone="pink"
+        />
+        <Stat
+          label="În așteptare"
+          value={money(onHold._sum.amountCents ?? 0, business.currency)}
+          sub={`${DISPUTE_WINDOW_DAYS} zile pentru contestații`}
+        />
+        <Stat label="Toleranță" value={`${business.gracePeriodMin} min`} sub="apoi locul se eliberează" />
+      </div>
+
+      <ServiceBoard
+        slug={business.slug}
+        rows={rows}
+        dueCount={due.length}
+        dueLabel={money(dueTotal, business.currency)}
+        suspended={Boolean(business.suspendedAt)}
+      />
     </main>
   );
 }
 
-function Stat({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  accent?: boolean;
-}) {
+function Stat({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: "pink" }) {
   return (
-    <div
-      className={`rounded-xl border px-4 py-3 ${
-        accent
-          ? "border-emerald-200 bg-emerald-50"
-          : "border-stone-200 bg-white"
-      }`}
-    >
-      <p className="text-[10px] font-medium uppercase tracking-wider text-stone-400">
-        {label}
-      </p>
-      <p className="mt-0.5 text-xl font-semibold tabular-nums text-stone-900">
-        {value}
-      </p>
-      <p className="text-xs text-stone-400">{sub}</p>
+    <div className={`p-5 ${tone === "pink" ? "bg-pink" : "bg-sheet"}`}>
+      <p className={`font-mono text-[11px] font-semibold uppercase tracking-[0.16em] ${tone === "pink" ? "text-ink" : "text-muted"}`}>{label}</p>
+      <p className={`mt-2 text-3xl font-bold tabular-nums tracking-[-0.04em] ${tone === "pink" ? "text-ink" : "text-blue"}`}>{value}</p>
+      <p className={`mt-0.5 text-xs ${tone === "pink" ? "text-ink/80" : "text-muted"}`}>{sub}</p>
     </div>
   );
 }

@@ -16,6 +16,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "smoke": "tsx scripts/smoke.ts",
     "test:integration": "tsx scripts/integration.mts",
+    "money": "tsx scripts/money-path.mts",
     "typegen": "next typegen"
   },
   "dependencies": {

@@ -5,6 +5,7 @@ import { ACTOR, BOOKING_STATUS, REQUIREMENT } from "@/lib/constants";
 import {
   ForbiddenActorError,
   InvalidTransitionError,
+  assertActorMayResolveDispute,
   assertActorMayTransition,
   assertTransition,
   canMarkNoShow,
@@ -131,4 +132,23 @@ test("terminal states really are terminal", () => {
   assert.ok(isTerminal(BOOKING_STATUS.WAIVED));
   assert.ok(isTerminal(BOOKING_STATUS.CANCELLED_FREE));
   assert.ok(!isTerminal(BOOKING_STATUS.CONFIRMED));
+});
+
+test("only the customer can open a dispute", () => {
+  assert.doesNotThrow(() => assertActorMayTransition(ACTOR.CUSTOMER, BOOKING_STATUS.DISPUTED));
+  for (const actor of [ACTOR.BUSINESS, ACTOR.SYSTEM, ACTOR.PLATFORM]) {
+    assert.throws(() => assertActorMayTransition(actor, BOOKING_STATUS.DISPUTED), ForbiddenActorError);
+  }
+});
+
+test("a business can refund a dispute but never uphold one", () => {
+  assert.doesNotThrow(() => assertActorMayResolveDispute(ACTOR.BUSINESS, "refund"));
+  assert.throws(() => assertActorMayResolveDispute(ACTOR.BUSINESS, "uphold"), ForbiddenActorError);
+  assert.doesNotThrow(() => assertActorMayResolveDispute(ACTOR.PLATFORM, "uphold"));
+  assert.throws(() => assertActorMayResolveDispute(ACTOR.CUSTOMER, "uphold"), ForbiddenActorError);
+});
+
+test("a failed charge took nothing, so it cannot be disputed", () => {
+  assert.equal(canTransition(BOOKING_STATUS.CHARGE_FAILED, BOOKING_STATUS.DISPUTED), false);
+  assert.equal(canTransition(BOOKING_STATUS.CHARGE_SUCCEEDED, BOOKING_STATUS.DISPUTED), true);
 });
